@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attivazione software — Gestione DVR Stone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Anti-flash: applica il tema salvato prima del render (come index.html)
+    (function(){
+      try{
+        var t = localStorage.getItem('dvr-theme');
+        if(!t){ t = 'light'; }
+        document.documentElement.setAttribute('data-theme', t);
+      }catch(e){ document.documentElement.setAttribute('data-theme','light'); }
+    })();
+  </script>
+  <style>
+    /* Stili SOLO di questa pagina (prefisso lic-): nessuna regola condivisa */
+    .lic-viewport {
+      height: 100vh; overflow-y: auto;
+      display: flex; align-items: center; justify-content: center;
+      padding: 28px 16px;
+      box-sizing: border-box;
+    }
+    .lic-card {
+      width: 100%; max-width: 620px;
+      background: var(--white);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      padding: 34px 38px 26px;
+      box-sizing: border-box;
+    }
+    .lic-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+    .lic-logo { width: 42px; height: 42px; border-radius: 10px; }
+    .lic-title { font-size: 21px; font-weight: 800; letter-spacing: -.02em; color: var(--gray-900); }
+    .lic-sub { font-size: 12.5px; color: var(--gray-500); margin-top: 1px; }
+
+    .lic-msg {
+      margin: 18px 0 20px;
+      padding: 12px 15px;
+      border-radius: var(--radius-md);
+      font-size: 13.5px; line-height: 1.55;
+      background: var(--blue-50); border: 1px solid var(--blue-200);
+      color: var(--gray-900);
+    }
+    .lic-msg.err  { background: var(--error-bg);   border-color: var(--error-bd);   }
+    .lic-msg.ok   { background: var(--success-bg); border-color: var(--success-bd); }
+    .lic-msg.warn { background: var(--warning-bg); border-color: var(--gray-300);   }
+
+    .lic-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--gray-600); margin-bottom: 7px;
+    }
+    .lic-code-row { display: flex; gap: 10px; align-items: stretch; margin-bottom: 22px; }
+    .lic-code {
+      flex: 1;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 16.5px; font-weight: 700; letter-spacing: .06em;
+      color: var(--blue-800);
+      background: var(--gray-50); border: 1.5px dashed var(--gray-300);
+      border-radius: var(--radius-md);
+      padding: 12px 14px; text-align: center;
+      user-select: text;
+    }
+
+    .lic-key {
+      width: 100%; box-sizing: border-box;
+      min-height: 96px; resize: vertical;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 12.5px; line-height: 1.6; letter-spacing: .03em;
+      color: var(--text); background: var(--surface);
+      border: 1.5px solid var(--gray-300); border-radius: var(--radius-md);
+      padding: 11px 13px; outline: none;
+      transition: border-color .15s;
+    }
+    .lic-key:focus { border-color: var(--blue-600); }
+
+    .lic-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      height: 40px; padding: 0 18px;
+      border-radius: var(--radius-md);
+      font-family: inherit; font-size: 13.5px; font-weight: 600;
+      border: 1.5px solid var(--gray-300);
+      background: var(--white); color: var(--gray-700);
+      cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+      white-space: nowrap;
+    }
+    .lic-btn:hover { background: var(--gray-50); border-color: var(--gray-400); }
+    .lic-btn:disabled { opacity: .55; cursor: default; }
+    .lic-btn.primary {
+      background: var(--blue-800); border-color: var(--blue-800); color: #fff;
+    }
+    .lic-btn.primary:hover:not(:disabled) { background: var(--blue-700); }
+    .lic-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .lic-actions .spacer { flex: 1; }
+
+    .lic-status {
+      margin-top: 20px; padding-top: 16px;
+      border-top: 1px solid var(--gray-200);
+      font-size: 12.5px; color: var(--gray-600);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .lic-status b { color: var(--gray-900); font-weight: 600; }
+
+    .lic-grace {
+      margin-top: 14px; padding: 12px 15px;
+      border-radius: var(--radius-md);
+      background: var(--warning-bg); border: 1px solid var(--gray-300);
+      font-size: 13px; color: var(--gray-900); line-height: 1.55;
+    }
+
+    .lic-foot {
+      margin-top: 22px; padding-top: 14px;
+      border-top: 1px solid var(--gray-200);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .lic-foot-note { font-size: 11px; color: var(--gray-400); }
+    .lic-quit {
+      background: none; border: none; cursor: pointer;
+      font-family: inherit; font-size: 12.5px; font-weight: 600;
+      color: var(--gray-500); padding: 6px 8px; border-radius: var(--radius-sm);
+    }
+    .lic-quit:hover { color: var(--error); background: var(--error-bg); }
+  </style>
+</head>
+<body>
+
+<div class="lic-viewport">
+  <div class="lic-card">
+
+    <div class="lic-head">
+      <img class="lic-logo" src="stone_icon.png" alt="">
+      <div>
+        <div class="lic-title">Attivazione software</div>
+        <div class="lic-sub">Gestione DVR Stone · Stone Safety</div>
+      </div>
+    </div>
+
+    <div class="lic-msg" id="lic-msg">Verifica della licenza in corso…</div>
+
+    <div class="lic-label">Codice identificativo di questo computer</div>
+    <div class="lic-code-row">
+      <div class="lic-code" id="lic-code">—</div>
+      <button class="lic-btn" id="btn-copy" onclick="Lic.copia()">Copia codice macchina</button>
+    </div>
+
+    <div class="lic-label">Chiave di attivazione</div>
+    <textarea class="lic-key" id="lic-key" spellcheck="false"
+      placeholder="Incolla qui la chiave di attivazione ricevuta (sono ammessi spazi, trattini, interruzioni di riga e lettere minuscole)"></textarea>
+
+    <div class="lic-actions">
+      <button class="lic-btn" onclick="Lic.incolla()">Incolla dagli appunti</button>
+      <span class="spacer"></span>
+      <button class="lic-btn primary" id="btn-activate" onclick="Lic.attiva()">Attiva software</button>
+    </div>
+
+    <div class="lic-grace" id="lic-grace" style="display:none"></div>
+    <div class="lic-actions" id="lic-grace-actions" style="display:none">
+      <span class="spacer"></span>
+      <button class="lic-btn" onclick="Lic.continua()">Continua comunque</button>
+    </div>
+
+    <div class="lic-status" id="lic-status" style="display:none"></div>
+
+    <div class="lic-foot">
+      <div class="lic-foot-note">L'attivazione avviene completamente offline: nessun dato viene trasmesso.</div>
+      <button class="lic-quit" onclick="Lic.chiudi()">Chiudi programma</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  function api(){ return (window.pywebview && window.pywebview.api) || null; }
+  function el(id){ return document.getElementById(id); }
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function setMsg(testo, tipo){
+    var m = el('lic-msg');
+    m.textContent = testo || '';
+    m.className = 'lic-msg' + (tipo ? ' ' + tipo : '');
+  }
+
+  function render(info){
+    el('lic-code').textContent = info.codice_macchina || '—';
+
+    var tipo = '';
+    if (info.esito === 'VALIDA') tipo = 'ok';
+    else if (info.esito === 'OROLOGIO') tipo = 'err';
+    else if (info.esito === 'VALIDA_GRAZIA') tipo = 'warn';
+    else if (info.esito !== 'ASSENTE') tipo = 'err';
+    setMsg(info.messaggio, tipo);
+
+    // Stato della licenza (se una chiave è presente)
+    var st = el('lic-status');
+    var righe = [];
+    if (info.esito === 'ASSENTE') {
+      righe.push('Stato della licenza: <b>non attivato</b>');
+    } else if (info.esito === 'SCADUTA' || info.esito === 'VALIDA_GRAZIA') {
+      righe.push('Stato della licenza: <b>scaduta</b>');
+    } else if (info.esito === 'VALIDA') {
+      righe.push('Stato della licenza: <b>attiva</b>');
+    } else if (info.esito === 'OROLOGIO') {
+      righe.push('Stato della licenza: <b>verifica non possibile</b>');
+    } else {
+      righe.push('Stato della licenza: <b>non valida</b>');
+    }
+    if (info.scadenza) righe.push('Scadenza: <b>' + esc(info.scadenza) + '</b>');
+    if (info.cliente)  righe.push('Cliente: <b>' + esc(info.cliente) + '</b>');
+    st.innerHTML = righe.map(function(r){ return '<span>' + r + '</span>'; }).join('');
+    st.style.display = '';
+
+    // Periodo di tolleranza (solo se configurato e attivo)
+    var g = el('lic-grace'), ga = el('lic-grace-actions');
+    if (info.esito === 'VALIDA_GRAZIA') {
+      g.innerHTML = 'La licenza è formalmente scaduta. Giorni di tolleranza rimanenti: '
+        + '<b>' + esc(info.grazia_giorni) + '</b>.'
+        + (info.grazia_blocco ? ' Blocco definitivo il <b>' + esc(info.grazia_blocco) + '</b>.' : '');
+      g.style.display = ''; ga.style.display = '';
+    } else {
+      g.style.display = 'none'; ga.style.display = 'none';
+    }
+
+    // Caso limite: licenza già valida (es. attivata da poco) → apri
+    if (info.esito === 'VALIDA') {
+      setTimeout(function(){ api() && api().license_open_app(); }, 900);
+    }
+  }
+
+  var _tentativi = 0;
+  function init(){
+    var a = api();
+    if (!a) {
+      if (++_tentativi < 120) setTimeout(init, 120);   // max ~15s di attesa
+      else setMsg('Impossibile verificare la licenza. Riavviare il programma.', 'err');
+      return;
+    }
+    a.license_info().then(render).catch(function(){
+      setMsg('Impossibile verificare la licenza. Riavviare il programma.', 'err');
+    });
+  }
+
+  window.Lic = {
+    copia: function(){
+      var a = api(); if (!a) return;
+      var code = el('lic-code').textContent;
+      a.license_copy(code).then(function(r){
+        var b = el('btn-copy');
+        b.textContent = (r && r.ok) ? 'Copiato ✓' : 'Copia non riuscita';
+        setTimeout(function(){ b.textContent = 'Copia codice macchina'; }, 1600);
+      });
+    },
+    incolla: function(){
+      var a = api(); if (!a) return;
+      a.license_paste().then(function(r){
+        if (r && r.testo) el('lic-key').value = r.testo;
+      });
+    },
+    attiva: function(){
+      var a = api(); if (!a) return;
+      var chiave = el('lic-key').value;
+      if (!chiave || !chiave.trim()) {
+        setMsg('Inserire la chiave di attivazione nel campo qui sopra.', 'err');
+        return;
+      }
+      var b = el('btn-activate');
+      b.disabled = true; b.textContent = 'Verifica in corso…';
+      a.license_activate(chiave).then(function(r){
+        b.disabled = false; b.textContent = 'Attiva software';
+        if (r && r.ok) {
+          setMsg(r.messaggio, 'ok');
+          var righe = ['Stato della licenza: <b>attiva</b>'];
+          if (r.scadenza) righe.push('Scadenza: <b>' + esc(r.scadenza) + '</b>');
+          if (r.cliente)  righe.push('Cliente: <b>' + esc(r.cliente) + '</b>');
+          el('lic-status').innerHTML =
+            righe.map(function(x){ return '<span>' + x + '</span>'; }).join('');
+          setTimeout(function(){ a.license_open_app(); }, 1100);
+        } else {
+          setMsg((r && r.messaggio) || 'La chiave di attivazione non è valida oppure è stata modificata.', 'err');
+        }
+      }).catch(function(){
+        b.disabled = false; b.textContent = 'Attiva software';
+        setMsg('Si è verificato un errore durante la verifica. Riprovare.', 'err');
+      });
+    },
+    continua: function(){
+      var a = api(); if (a) a.license_open_app();
+    },
+    chiudi: function(){
+      var a = api(); if (a) a.license_quit();
+    }
+  };
+
+  window.addEventListener('pywebviewready', init);
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+
+</body>
+</html>

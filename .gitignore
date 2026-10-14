@@ -1,13 +1,17 @@
-# File di sistema macOS/Windows
+# File di sistema
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Codice sorgente: NON va nella repo pubblica (resta privato sul Mac)
+# Codice sorgente: NON pubblico
 Sorgenti_per_Windows.zip
 
-# App gia' scompattata: ridondante, basta lo .zip
-Gestione DVR Stone.app/
+# L'app sta nel repo GIA' SCOMPATTATA → lo zip non serve
+Gestione DVR Stone.zip
 
-# DATI CLIENTI: non vanno MAI pubblicati (restano solo sul disco)
+# DATI CLIENTI: mai pubblicati (restano nei Documenti di ogni PC)
 Supporto DVR Stone/03_Cartella clienti/
+
+# Backup/archivi dentro il Supporto: non vanno nel repo (i file ci sono gia' scompattati)
+Supporto DVR Stone/**/*.zip
+Supporto DVR Stone/**/*.bak*
