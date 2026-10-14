@@ -2,7 +2,7 @@
  "app_version": "1.0",
  "updated": "2026-10-14",
  "app_zip": "Gestione DVR Stone.zip",
- "app_zip_sha256": "33c673c1f0ff33810ed0b31282694b36c96452b6456b0493c159baf6ecc1b04e",
+ "app_zip_sha256": "ee2f991d46603fdca728edda32914d934c129f3a8b9c2d89820a2a6767bb08a4",
  "sync_prefix": "Supporto DVR Stone/02_Supporto/",
  "supporto_files": {
   "Supporto DVR Stone/02_Supporto/01_Logo/Logo stone rev.png": "88ced8fb0b82d179ee196cd2626d76a55c9fb63fcc186c26ce8fbc07106c4046",
