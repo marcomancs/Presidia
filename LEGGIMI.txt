@@ -1,0 +1,33 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║   GESTIONE DVR STONE — VERSIONE 0.9 — FILE DEFINITIVI                  ║
+║   (questa è la cartella GIUSTA, aggiornata il 2026-10-14)             ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Contenuto di questa cartella «esportazione REV»:
+
+1) Gestione DVR Stone.zip
+   → APP PER MAC (V 0.9). Scompatta e avvia "Gestione DVR Stone.app".
+     È già compilata e pronta all'uso.
+
+2) Sorgenti_per_Windows.zip
+   → SORGENTI PER WINDOWS. L'.exe NON è incluso: va compilato SU un PC
+     Windows. Scompatta lo zip e segui "GUIDA_BUILD_WINDOWS.md" dentro.
+     (PyInstaller non può creare l'.exe dal Mac.)
+
+3) Supporto DVR Stone/
+   → CARTELLA DI SUPPORTO COMPLETA E AGGIORNATA (template, procedure,
+     schede chimiche, cataloghi MMC/movimenti, ecc.). Include:
+       • 02_Template/Cantieri/  → template Cap 3/4/20 per i CANTIERI
+         (usati automaticamente quando l'anagrafica non ha sede operativa);
+       • 14_ Schede prodotti chimici → database schede del rischio chimico;
+       • nome file "STABILIMENTO BALNEARE…" corretto (tolto lo spazio finale).
+     Nell'app: Impostazioni → cartella root/template puntano a QUESTA cartella.
+
+──────────────────────────────────────────────────────────────────────────
+NOTE
+• Versione app: V 0.9 (badge in basso nell'app).
+• Le altre copie sparse sul Desktop (es. «DVR Stone DEFINITIVO», vecchie
+  «Supporto DVR Stone») NON sono più quelle di riferimento: vale QUESTA.
+• Alcune funzioni Excel su Mac (resa fogli, salvataggio allegati) sono da
+  verificare dal vivo con Word/Excel aperti.
+──────────────────────────────────────────────────────────────────────────
