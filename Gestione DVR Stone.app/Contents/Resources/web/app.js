@@ -1452,6 +1452,7 @@ const App = (() => {
                            state.currentClient?.json_path || '');
     hideLoading();
     if (res?.error) toast(res.error, 'error');
+    else toast('Anteprima: sommario e n° pagine verranno aggiornati automaticamente nell\'esportazione finale.', 'info', 5000);
   }
 
   /* ── Restore saved form data (ricompila) ────────────────────────────── */
@@ -7205,7 +7206,7 @@ const App = (() => {
                            state.currentClient?.json_path || '');
     hideLoading();
     if (res?.error) toast(res.error, 'error');
-    else toast('Anteprima aperta in Word', 'info');
+    else toast('Anteprima aperta in Word. Sommario e n° pagine verranno aggiornati automaticamente nell\'esportazione finale.', 'info', 5000);
   }
 
   // Chiamata dal backend (watcher) quando l'anteprima viene salvata in Word.
