@@ -317,6 +317,7 @@ const App = (() => {
     if (el('stat-in-corso'))   el('stat-in-corso').textContent   = inCorso;
     if (el('stat-completati')) el('stat-completati').textContent = completati;
     if (el('stat-capitoli'))   el('stat-capitoli').textContent   = capitoli;
+    if (el('stat-totali'))     el('stat-totali').textContent     = (history || []).length;
   }
 
   /* ── Home ───────────────────────────────────────────────────────────── */
@@ -386,95 +387,52 @@ const App = (() => {
   function renderClientList(history) {
     const list  = document.getElementById('clients-list');
     const count = document.getElementById('clients-count');
+    if (!list) return;
 
     if (!history || history.length === 0) {
       if (count) count.textContent = '';
       list.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">${ic('file_text', 44)}</div>
-          <p>Non hai ancora compilato nessun DVR.<br>
-             Trascina un file JSON o clicca <strong>Seleziona file JSON</strong> per iniziare.</p>
+          <div class="empty-icon">${ic('file_text', 40)}</div>
+          <p>Nessun DVR da mostrare.<br>Trascina un file JSON o clicca <strong>Nuovo DVR</strong> per iniziare.</p>
         </div>`;
       return;
     }
+    if (count) count.textContent = (state.history || []).length;
 
-    if (count) count.textContent = history.length;
-
-    const C = 119.38; // circonferenza anello r=19
     list.innerHTML = history.map((c, i) => {
-      const name     = escHtml(c.name || 'Azienda');
+      const name      = escHtml(c.name || 'Azienda');
       const TOTAL_CAP = _totCap(c);
-      const chapters = _capNonEsclusi(c);
-      const exported = chapters.filter(ch => ch.output_path).length;
-      const withData = chapters.filter(ch => ch.form_data || ch.output_path).length;
-      const pct      = Math.min(100, Math.round(withData / TOTAL_CAP * 100));
-      const offset   = (C * (1 - Math.min(withData, TOTAL_CAP) / TOTAL_CAP)).toFixed(1);
+      const chapters  = _capNonEsclusi(c);
+      const exported  = chapters.filter(ch => ch.output_path).length;
+      const withData  = chapters.filter(ch => ch.form_data || ch.output_path).length;
+      const pct       = Math.min(100, Math.round(withData / TOTAL_CAP * 100));
 
-      // Prima lettera del nome
-      const initials = ((c.name || 'A').trim()[0] || 'A').toUpperCase();
+      let dotColor, cntLabel, cntColor;
+      if (exported >= TOTAL_CAP)              { dotColor = 'var(--success)';  cntLabel = 'Completato';         cntColor = 'var(--success)'; }
+      else if (withData >= TOTAL_CAP)         { dotColor = '#B9770E';         cntLabel = `${withData}/${TOTAL_CAP}`; cntColor = 'var(--gray-600)'; }
+      else if (withData > 0)                  { dotColor = 'var(--blue-800)'; cntLabel = `${withData}/${TOTAL_CAP}`; cntColor = 'var(--gray-600)'; }
+      else                                    { dotColor = 'var(--gray-400)'; cntLabel = `0/${TOTAL_CAP}`;     cntColor = 'var(--gray-500)'; }
 
-      // Stato + colori
-      let pillLabel, dotColor, ringColor, capLabel;
-      if (exported >= TOTAL_CAP) {
-        pillLabel = 'Completato'; dotColor = 'var(--success)';
-        ringColor = 'var(--success)';
-        capLabel = `${exported} di ${TOTAL_CAP} capitoli`;
-      } else if (withData >= TOTAL_CAP && exported === 0) {
-        pillLabel = 'Da esportare'; dotColor = '#B9770E';
-        ringColor = 'var(--blue-800)';
-        capLabel = `${withData} di ${TOTAL_CAP} capitoli`;
-      } else if (withData > 0) {
-        pillLabel = 'In corso'; dotColor = 'var(--blue-800)';
-        ringColor = 'var(--blue-800)';
-        capLabel = `${withData} di ${TOTAL_CAP} capitoli`;
-      } else {
-        pillLabel = 'Nuovo'; dotColor = 'var(--gray-500)';
-        ringColor = 'var(--gray-200)';
-        capLabel = `0 di ${TOTAL_CAP} capitoli`;
-      }
-      const pillCls = 'background:var(--gray-100);color:var(--gray-700)';
+      const parts    = (c.name || 'A').trim().split(/\s+/);
+      const initials = (parts.length >= 2 ? (parts[0][0] + parts[1][0]) : (c.name || 'A').slice(0, 2)).toUpperCase();
 
       const dates    = chapters.map(ch => ch.completed_at).filter(Boolean).sort();
-      const lastDate = dates.at(-1) || c.created_at || '';
-      const ago      = timeAgo(lastDate);
-
-      // Settore e città
-      const { settore, citta } = extractMeta(c);
-      const metaStr = [settore, citta].filter(Boolean).join(' · ');
-
-      const pillStyle = `font-size:11px;font-weight:700;padding:3px 10px;border-radius:var(--radius-pill);white-space:nowrap;flex-shrink:0;${pillCls}`;
+      const ago      = timeAgo(dates.at(-1) || c.created_at || '');
 
       return `
-        <div class="client-card" onclick="App.showClient('${c.id}')"
-             style="flex-direction:column;align-items:stretch;gap:0;padding:18px;animation-delay:${i * 35}ms">
-          <div style="display:flex;align-items:flex-start;gap:12px">
-            <div class="client-icon" style="font-size:13px;font-weight:800">${initials}</div>
-            <div style="flex:1;min-width:0">
-              <div class="client-name">${name}</div>
-              ${metaStr ? `<div class="client-sector">${escHtml(metaStr)}</div>` : ''}
-            </div>
-            <span style="${pillStyle}"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:6px;vertical-align:middle"></span>${pillLabel}</span>
+        <div class="dvr-row" onclick="App.showClient('${c.id}')" style="animation-delay:${i * 28}ms">
+          <div class="dvr-av">${escHtml(initials)}</div>
+          <div class="dvr-main">
+            <div class="dvr-name"><span class="dvr-dot" style="background:${dotColor}"></span>${name}</div>
+            <div class="dvr-bar"><i style="width:${pct}%"></i></div>
           </div>
-          <div style="height:1px;background:var(--gray-100);margin:14px 0"></div>
-          <div style="display:flex;align-items:center;gap:13px">
-            <div style="position:relative;width:46px;height:46px;flex-shrink:0">
-              <svg width="46" height="46" viewBox="0 0 46 46">
-                <circle cx="23" cy="23" r="19" fill="none" stroke="var(--gray-200)" stroke-width="5"/>
-                <circle cx="23" cy="23" r="19" fill="none" stroke="${ringColor}" stroke-width="5"
-                        stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${offset}"
-                        transform="rotate(-90 23 23)"/>
-              </svg>
-              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--gray-900)">${pct}%</div>
-            </div>
-            <div style="flex:1;min-width:0">
-              <div class="client-cap-label">${capLabel}</div>
-              ${ago ? `<div class="client-timeago">${ago}</div>` : ''}
-            </div>
-            <button class="btn-delete-client" title="Rimuovi cliente"
-                    onclick="event.stopPropagation(); App.deleteClient('${c.id}')">
-              ${ic('x', 12)}
-            </button>
+          <div class="dvr-right">
+            <div class="dvr-count" style="color:${cntColor}">${cntLabel}</div>
+            <div class="dvr-ago">${ago || ''}</div>
           </div>
+          <button class="dvr-del" title="Rimuovi dalla lista"
+                  onclick="event.stopPropagation(); App.deleteClient('${c.id}')">${ic('x', 13)}</button>
         </div>`;
     }).join('');
   }
@@ -806,6 +764,8 @@ const App = (() => {
     const cntEl = document.getElementById('cd-ring-count');
     if (pctEl) pctEl.textContent = `${pct}%`;
     if (cntEl) cntEl.textContent = `${done}/${TOTAL_CAP}`;
+    const heroFill = document.getElementById('cd-hero-fill');
+    if (heroFill) setTimeout(() => { heroFill.style.width = `${pct}%`; }, 80);
 
     _renderTemplateToggle(client);
     _renderSurveyBanner(client);
@@ -815,7 +775,7 @@ const App = (() => {
     showView('client');
   }
 
-  // Pannello "3 passi" nella colonna sinistra della pagina cliente.
+  // 3 passi IN LINEA nella testata navy della pagina cliente.
   async function _renderClientSteps(client, done, total) {
     const box = document.getElementById('cd-steps');
     if (!box) return;
@@ -823,25 +783,25 @@ const App = (() => {
     try { avvisi = await call('controlla_dati', client.json_path) || []; } catch (e) { avvisi = []; }
     const nAvv = avvisi.length;
     const allDone = done >= total;
-    const s1cls = nAvv ? 'cd-step-danger' : 'cd-step-ok';
+    const s1cls = nAvv ? 'bad' : 'ok';
     const s1txt = nAvv ? `${nAvv} da sistemare` : 'A posto';
-    const s3cls = allDone ? 'cd-step-ok' : '';
+    const s3cls = allDone ? 'ok' : '';
     const s3txt = allDone ? 'Pronto' : 'In attesa';
     box.innerHTML = `
-      <div class="cd-step ${s1cls}" onclick="App.openChecklist()">
-        <span class="cd-step-n">1</span>
-        <span class="cd-step-tx">Controlla i dati</span>
-        <span class="cd-step-badge">${s1txt}</span>
+      <div class="cd-phase ${s1cls}" onclick="App.openChecklist()">
+        <span class="cd-phase-n">1</span>
+        <span class="cd-phase-l">Controlla i dati</span>
+        <span class="cd-phase-v">${s1txt}</span>
       </div>
-      <div class="cd-step cd-step-active">
-        <span class="cd-step-n">2</span>
-        <span class="cd-step-tx">Compila i capitoli</span>
-        <span class="cd-step-badge">${done}/${total}</span>
+      <div class="cd-phase active">
+        <span class="cd-phase-n">2</span>
+        <span class="cd-phase-l">Compila i capitoli</span>
+        <span class="cd-phase-v">${done}/${total}</span>
       </div>
-      <div class="cd-step ${s3cls}" onclick="App.compileAllToFolder('docx')">
-        <span class="cd-step-n">3</span>
-        <span class="cd-step-tx">Genera il DVR</span>
-        <span class="cd-step-badge">${s3txt}</span>
+      <div class="cd-phase ${s3cls}" onclick="App.compileAllToFolder('docx')">
+        <span class="cd-phase-n">3</span>
+        <span class="cd-phase-l">Genera il DVR</span>
+        <span class="cd-phase-v">${s3txt}</span>
       </div>`;
   }
 
@@ -1133,6 +1093,15 @@ const App = (() => {
     const open = list.style.display === 'none';
     list.style.display = open ? 'block' : 'none';
     if (chev) chev.textContent = open ? '▴' : '▾';
+  }
+
+  function toggleChecklistWarn() {
+    const list = document.getElementById('cl-warn-list');
+    const chev = document.getElementById('cl-warn-chev');
+    if (!list) return;
+    const open = list.style.display === 'none';
+    list.style.display = open ? 'block' : 'none';
+    if (chev) chev.textContent = open ? '▾' : '▸';
   }
 
   function _showChapterCompleteAnim(chapterId, onDone) {
@@ -5230,7 +5199,12 @@ const App = (() => {
   }
 
   function _c10GruppoHtml(fieldId, gi, g, attDisp) {
-    const attChecks = attDisp.map(a => {
+    // Elenca le attrezzature DEL gruppo (non quelle di tutti i gruppi): fix
+    // associazione attrezzature↔gruppo (feedback 2026-10-15). Fallback alla
+    // lista globale solo se il gruppo non porta la propria.
+    const attList = (Array.isArray(g.attrezzature) && g.attrezzature.length)
+      ? g.attrezzature : attDisp;
+    const attChecks = attList.map(a => {
       const sel = g.attrezzature_selezionate && g.attrezzature_selezionate.includes(a);
       return `<label class="c10-att-row">
         <input type="checkbox" ${sel ? 'checked' : ''}
@@ -5297,7 +5271,7 @@ const App = (() => {
           placeholder="Descrivere le attività lavorative svolte...">${escHtml(g.descrizione_attivita || '')}</textarea>
       </div>
 
-      ${attDisp.length ? `<div class="c10-att-section">
+      ${attList.length ? `<div class="c10-att-section">
         <div class="c10-subsec-hdr">Attrezzature rumorose usate dal gruppo</div>
         <div class="c10-subsec-desc">Spunta le attrezzature rumorose effettivamente utilizzate da questo gruppo.</div>
         <div class="c10-att-grid">${attChecks}</div>
@@ -6572,8 +6546,15 @@ const App = (() => {
     const box = document.getElementById('cl-warnings');
     if (!box || !avvisi.length) return;
     const ic = (lv) => lv === 'errore' ? '⛔' : lv === 'attenzione' ? '⚠️' : 'ℹ️';
+    // Box COLLASSABILE + altezza massima con scroll: da chiuso mostra solo
+    // titolo+conteggio, così non occupa mezza schermata e si lavora sui campi
+    // sotto (feedback 2026-10-15). Click sul titolo = apri/chiudi.
     box.innerHTML = `<div class="cl-warn-box">
-      <div class="cl-warn-title">Controllo dati — ${avvisi.length} segnalazion${avvisi.length === 1 ? 'e' : 'i'} (clicca per andare al campo)</div>
+      <div class="cl-warn-title" onclick="App.toggleChecklistWarn()">
+        <span class="cl-warn-chev" id="cl-warn-chev">▸</span>
+        Controllo dati — ${avvisi.length} segnalazion${avvisi.length === 1 ? 'e' : 'i'} (clicca per aprire)
+      </div>
+      <div class="cl-warn-list" id="cl-warn-list" style="display:none">
       ${avvisi.map(a => {
         const t = a.target ? ` data-cl-goto="${escAttr(JSON.stringify(a.target))}"` : '';
         return `<div class="cl-warn-row cl-warn-${escAttr(a.livello)}${a.target ? ' cl-warn-clickable' : ''}"${t}>
@@ -6581,6 +6562,7 @@ const App = (() => {
         ${a.soluzione ? `<div class="cl-warn-fix"><b>Come risolvere:</b> ${escHtml(a.soluzione)}</div>` : ''}
       </div>`;
       }).join('')}
+      </div>
     </div>`;
     box.querySelectorAll('[data-cl-goto]').forEach(el =>
       el.addEventListener('click', () => gotoChecklistField(el.getAttribute('data-cl-goto'))));
@@ -7847,7 +7829,7 @@ const App = (() => {
     onCap0Toggle,
     onCap0DataEmissione,
     onCap0SuperG,
-    openChecklist, closeChecklist, saveChecklist, toggleClientWarn, gotoChecklistField,
+    openChecklist, closeChecklist, saveChecklist, toggleClientWarn, toggleChecklistWarn, gotoChecklistField,
     onCap20PE, onCap20LF, onCap20Global, onCap20Strategia,
     onCap20DprSearch, onCap20DprSelect, onCap20DprBlur,
     toggleC20Area,
