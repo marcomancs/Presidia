@@ -97,6 +97,9 @@ html[data-theme="dark"] {
 
 /* ── Reset ─────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Lo scroll di un elenco NON trascina la pagina: arrivato a fine lista si ferma
+   lì (overscroll-behavior; sui non-scrollabili è un no-op). Feedback 2026-10-19. */
+* { overscroll-behavior: contain; }
 
 html, body {
   height: 100%;
