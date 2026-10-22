@@ -22,7 +22,7 @@
 		</data>
 		<key>Resources/base_library.zip</key>
 		<data>
-		qr/wjYxdusj7B/Xo8C7yW+piPSU=
+		3+L8sLD4CQVIcOIwaOb2ro6ZtPg=
 		</data>
 		<key>Resources/certifi/cacert.pem</key>
 		<data>
@@ -174,11 +174,11 @@
 		</data>
 		<key>Resources/web/app.js</key>
 		<data>
-		OQepk2OJbmbkKjLTFjF2ky0HIwM=
+		EdgsC47rnAcilwC5bLxRyMsihGk=
 		</data>
 		<key>Resources/web/index.html</key>
 		<data>
-		zo+fsk9P2ZQ7/NIgwiPFEmADlV0=
+		Qh7pUcej3KMlLE28jRxK5jX04IQ=
 		</data>
 		<key>Resources/web/stone_icon.png</key>
 		<data>
@@ -186,7 +186,7 @@
 		</data>
 		<key>Resources/web/style.css</key>
 		<data>
-		vse4hcCZsxqB2lrykTDH+jjWLxE=
+		SEjmtY0WJfJLPNp+eUX1QKEUdHU=
 		</data>
 		<key>Resources/webview/js/api.js</key>
 		<data>
@@ -1298,7 +1298,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			BYq7j7aW93ivz8FVhga+gJUcv1WLjYjfcJ7Y2jFsjlw=
+			QpTX3ShpPlFTWJh+lJ2KazEH+G7XHFMZ9YEVTKHZd0E=
 			</data>
 		</dict>
 		<key>Resources/certifi/cacert.pem</key>
@@ -1699,14 +1699,14 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			d0FZuEpBIAjvUbTRgkrGbnIkPlDgjYSi0PhP4sGoPw8=
+			A4PtZHOblanI6J9a+x5jBuUW8ZkPh5Jx4nfvtVs50iM=
 			</data>
 		</dict>
 		<key>Resources/web/index.html</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			1S1j9R+tRBnC9Z6UaOhM4t6MVfNmuQo5r1vIy3nYwI4=
+			YRbIk7hjrHV92TVADNf1/E5xLmVssVelbnbtBkQdCE4=
 			</data>
 		</dict>
 		<key>Resources/web/stone_icon.png</key>
@@ -1720,7 +1720,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			Q4Bto/weZVXr92pk3Ffa0G+K0b3G73Bqx958E1gattw=
+			aOaE9zkkB+ZY90IgaVaegW06peI+zH4W0jgycno1dhw=
 			</data>
 		</dict>
 		<key>Resources/webview/js/api.js</key>

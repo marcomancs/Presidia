@@ -711,6 +711,8 @@ const App = (() => {
     _renderTemplateToggle(client);      // spunta "Usa i dati del template"
     _renderSurveyBanner(client);        // conferma questionari anche dopo l'import
     await renderChaptersList(client, true);
+    _renderDvrTypeBar(client);
+    setClientSection('menu');
     showView('client');
   }
 
@@ -772,7 +774,156 @@ const App = (() => {
     _renderClientSteps(client, done, TOTAL_CAP);
     _renderChapterFilterBar(client);
     renderChaptersList(client, true);   // anima solo all'ingresso nella vista
+    _renderDvrTypeBar(client);
+    setClientSection('menu');
     showView('client');
+  }
+
+  /* ── Tipo DVR + sezioni della scheda cliente ───────────────────────── */
+  const DVR_TYPES = {
+    completo: { label: 'DVR Completo', note: 'allegati 0–30' },
+    super_g:  { label: 'DVR Super G',  note: 'allegati 0–33' },
+    e:        { label: 'DVR E',        note: 'allegati 0–33' },
+  };
+
+  // Il JSON indica SOLO super G / normale: la scelta finale la fa il tecnico.
+  function _rilevaTipoDvrDalJson(raw) {
+    const t = String(raw?.meta?.tipo_dvr || raw?.tipo_dvr || '').toLowerCase();
+    return t.includes('super') ? 'super_g' : 'normale';
+  }
+
+  function _tipoDvrCliente(client) {
+    if (client?.tipo_dvr) return client.tipo_dvr;           // scelta salvata
+    const det = _rilevaTipoDvrDalJson(state.jsonRaw || {}); // default dal JSON
+    return det === 'super_g' ? 'super_g' : 'completo';
+  }
+
+  const _CHEVRON_DOWN = '<svg class="dvr-chip-ch" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  const _CHEVRON_UP = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+
+  function _renderDvrTypeBar(client) {
+    const bar = document.getElementById('dvr-type-bar');
+    if (!bar) return;
+    const cur = _tipoDvrCliente(client);
+    const info = DVR_TYPES[cur] || DVR_TYPES.completo;
+    const hasRaw = !!(state.jsonRaw && Object.keys(state.jsonRaw).length);
+    const det = _rilevaTipoDvrDalJson(state.jsonRaw || {});
+    const detLabel = det === 'super_g' ? 'Super G' : 'normale';
+
+    if (!state.dvrTypeExpanded) {
+      // Compatto: chip con il tipo selezionato, cliccabile per espandere.
+      bar.className = 'dvr-type-bar dvr-type-bar--chip';
+      bar.innerHTML =
+        `<button class="dvr-chip" onclick="App.toggleDvrType()" title="Cambia tipo di DVR">
+           <span class="dvr-chip-k">Tipo DVR</span>
+           <span class="dvr-chip-v">${info.label}<small>${info.note}</small></span>
+           ${_CHEVRON_DOWN}
+         </button>`;
+      bar.style.display = '';
+      return;
+    }
+
+    // Esteso: scelta completa tra i 3 tipi.
+    bar.className = 'dvr-type-bar';
+    const detHtml = hasRaw
+      ? `<span class="dvr-type-det">Dal JSON: <b>${detLabel}</b> — scegli il tipo</span>`
+      : '';
+    const btns = Object.entries(DVR_TYPES).map(([k, v]) =>
+      `<button class="dvr-type-btn${k === cur ? ' dvr-type-active' : ''}"
+         onclick="App.onPickTipoDvr('${k}')">
+         <span class="dvr-btn-tt">${v.label}</span><small>${v.note}</small>
+       </button>`
+    ).join('');
+    bar.innerHTML =
+      `<div class="dvr-type-head"><span>Tipo di DVR</span>${detHtml}
+         <button class="dvr-type-collapse" onclick="App.toggleDvrType()" title="Comprimi">${_CHEVRON_UP}</button></div>
+       <div class="dvr-type-opts">${btns}</div>`;
+    bar.style.display = '';
+  }
+
+  function toggleDvrType() {
+    state.dvrTypeExpanded = !state.dvrTypeExpanded;
+    if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+  }
+
+  async function onPickTipoDvr(tipo) {
+    if (!state.currentClient || !DVR_TYPES[tipo]) return;
+    state.currentClient.tipo_dvr = tipo;
+    // Nelle sezioni dove il selettore è compatto, dopo la scelta si richiude.
+    if (state.clientSection !== 'allegati' && state.clientSection !== 'menu') {
+      state.dvrTypeExpanded = false;
+    }
+    _renderDvrTypeBar(state.currentClient);
+    const jp = state.currentClient.json_path;
+    if (jp) { try { await call('imposta_tipo_dvr', jp, tipo); } catch (e) {} }
+  }
+
+  function setClientSection(name) {
+    const panes = {
+      menu: 'sec-menu', capitoli: 'sec-capitoli', allegati: 'sec-allegati',
+      haccp: 'sec-haccp', piano: 'sec-piano',
+    };
+    Object.entries(panes).forEach(([sec, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = (sec === name) ? '' : 'none';
+    });
+    // La barra schede è nascosta sul menu, visibile dentro una sezione.
+    const tabs = document.getElementById('client-sections');
+    if (tabs) tabs.style.display = (name === 'menu') ? 'none' : '';
+    document.querySelectorAll('#client-sections .cx-tab').forEach(t => {
+      t.classList.toggle('cx-tab--active', t.dataset.sec === name);
+    });
+    state.clientSection = name;
+    // Il selettore Tipo DVR è esteso solo in Allegati (e sul menu iniziale),
+    // compatto altrove (es. Capitoli) ma sempre riapribile.
+    state.dvrTypeExpanded = (name === 'allegati' || name === 'menu');
+    if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+  }
+
+  async function generaAllegati() {
+    const client = state.currentClient;
+    const jp = client?.json_path;
+    if (!jp) { toast('Apri un cliente con un JSON per generare gli allegati', 'error'); return; }
+    const tipo = _tipoDvrCliente(client);
+    const box = document.getElementById('alg-results');
+    showLoading('Generazione allegati…');
+    // apri=false: NON apre la cartella (resta tutto dentro il software).
+    const res = await call('genera_allegati', jp, tipo, false);
+    hideLoading();
+    if (!res || res.error) { toast(res?.error || 'Errore generazione allegati', 'error'); return; }
+    state.allegatiFolder = res.cartella || '';
+    const righe = (res.generati || []).map(g => {
+      const n = (g.numero != null) ? `Allegato ${g.numero}` : g.file;
+      const comp = g.stato === 'compilato';
+      return `<div class="alg-row">
+        <span class="alg-dot${comp ? ' alg-dot--ok' : ''}"></span>
+        <span class="alg-name">${escHtml(n)}</span>
+        <span class="alg-state">${comp ? 'compilato' : 'copiato'}</span>
+      </div>`;
+    }).join('');
+    const nerr = (res.errori || []).length;
+    box.innerHTML = `
+      <div class="alg-summary">Generati <b>${res.n_totali}</b> allegati
+        (${res.n_compilati} compilati automaticamente)${nerr ? ` · <span class="alg-err">${nerr} errori</span>` : ''}
+        · usa <b>Apri cartella</b> in alto per vederli</div>
+      <div class="alg-list">${righe}</div>`;
+    toast('Allegati generati', 'success');
+  }
+
+  async function apriCartellaAllegati() {
+    const f = state.allegatiFolder;
+    if (!f) { toast('Genera prima gli allegati', 'error'); return; }
+    const res = await call('apri_cartella', f);
+    if (res?.error) toast(res.error, 'error');
+  }
+
+  // Pulsante fisso nell'intestazione: apre la cartella Allegati del cliente.
+  async function apriCartellaAllegatiCliente() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    const res = await call('apri_cartella_allegati', jp);
+    if (res?.error) { toast(res.error, 'error'); return; }
+    if (res?.cartella) state.allegatiFolder = res.cartella;
   }
 
   // 3 passi IN LINEA nella testata navy della pagina cliente.
@@ -7343,7 +7494,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Gestione DVR Stone · versione 1.0</div>
+        <div class="release-version">Gestione DVR Stone · versione 1.1</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
@@ -7778,7 +7929,11 @@ const App = (() => {
     await refreshHistory();
     const updated = state.history.find(c => c.json_path === client.json_path);
     if (updated) { state.currentClient = updated; renderChaptersList(updated); }
-    toast(`${res.count} document${res.count === 1 ? 'o' : 'i'} salvati`, 'success', 4000);
+    const alg = res.allegati;
+    const msgAlg = (alg && alg.n)
+      ? ` + ${alg.n} allegati (cartella "Allegati")`
+      : '';
+    toast(`${res.count} document${res.count === 1 ? 'o' : 'i'} salvati${msgAlg}`, 'success', 5000);
   }
 
   /* ── Public API ─────────────────────────────────────────────────────── */
@@ -7793,6 +7948,8 @@ const App = (() => {
   return {
     init, showHome, showClient, showConfig, toggleTheme,
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
+    onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
+    apriCartellaAllegati, apriCartellaAllegatiCliente,
     onToggleTemplateCap, onToggleCapitoloEscluso,
     startChapter, recompileChapter, openChapterForm,
     goBackFromForm, toggleAutoSection,
