@@ -293,13 +293,26 @@ const App = (() => {
   // Capitoli implementati (0,1,2,3,4,5,6,7,8,10,11,14,17,20,21,22). Totale per
   // cliente = 16 meno i capitoli esclusi.
   const CAP_TOTALI = 16;
+  // DVR super G: vengono elaborati SOLO questi capitoli (gli altri sono nascosti).
+  // Completo e DVR E: tutti i capitoli. (Feedback 2026-10-22.)
+  const SUPER_G_CAPITOLI = ['0', '1', '2', '3', '4', '5', '8', '14', '21'];
+  function _tipoOf(client) { return (client && client.tipo_dvr) || 'completo'; }
+  // Il capitolo è nascosto per il tipo DVR di QUESTO cliente?
+  function _hiddenForClient(cid, client) {
+    if (_tipoOf(client) !== 'super_g') return false;
+    return !SUPER_G_CAPITOLI.includes(String(cid));
+  }
   function _totCap(client) {
-    const escl = Object.keys((client && client.capitoli_esclusi) || {}).length;
-    return Math.max(1, CAP_TOTALI - escl);
+    let tot = (_tipoOf(client) === 'super_g') ? SUPER_G_CAPITOLI.length : CAP_TOTALI;
+    // esclusioni manuali che NON sono già nascoste dal tipo
+    const escl = Object.keys((client && client.capitoli_esclusi) || {})
+      .filter(k => !_hiddenForClient(k, client)).length;
+    return Math.max(1, tot - escl);
   }
   function _capNonEsclusi(client) {
     const escl = (client && client.capitoli_esclusi) || {};
-    return (client && client.chapters || []).filter(ch => !escl[String(ch.id)]);
+    return (client && client.chapters || []).filter(
+      ch => !escl[String(ch.id)] && !_hiddenForClient(ch.id, client));
   }
 
   function _updateStats(history) {
@@ -683,6 +696,16 @@ const App = (() => {
     if (ndip) parts.push(`${ndip} dipendent${ndip === 1 ? 'e' : 'i'}`);
     document.getElementById('import-success-meta').textContent = parts.join(' · ');
 
+    // Avviso tipo DVR rilevato dal JSON (Super G o normale).
+    const notice = document.getElementById('import-type-notice');
+    if (notice) {
+      const det = _rilevaTipoDvrDalJson(raw);
+      const isSuper = det === 'super_g';
+      notice.innerHTML = `Dal JSON risulta un <b>DVR ${isSuper ? 'Super G' : 'normale'}</b>` +
+        ` — potrai confermare o cambiare il tipo nella scheda.`;
+      notice.style.display = '';
+    }
+
     const overlay = document.getElementById('import-success-overlay');
     overlay.classList.remove('fade-out');
     overlay.style.display = 'flex';
@@ -856,6 +879,14 @@ const App = (() => {
     _renderDvrTypeBar(state.currentClient);
     const jp = state.currentClient.json_path;
     if (jp) { try { await call('imposta_tipo_dvr', jp, tipo); } catch (e) {} }
+    // Propaga: cambiando tipo cambia la struttura di capitoli e allegati.
+    try {
+      await renderChaptersList(state.currentClient);
+      _renderChapterFilterBar(state.currentClient);
+      _renderClientSteps(state.currentClient,
+        _capNonEsclusi(state.currentClient).filter(ch => ch.form_data || ch.output_path).length,
+        _totCap(state.currentClient));
+    } catch (e) {}
   }
 
   function setClientSection(name) {
@@ -892,6 +923,7 @@ const App = (() => {
     hideLoading();
     if (!res || res.error) { toast(res?.error || 'Errore generazione allegati', 'error'); return; }
     state.allegatiFolder = res.cartella || '';
+    const _svgOpenFile = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
     const righe = (res.generati || []).map(g => {
       const n = (g.numero != null) ? `Allegato ${g.numero}` : g.file;
       const comp = g.stato === 'compilato';
@@ -899,6 +931,8 @@ const App = (() => {
         <span class="alg-dot${comp ? ' alg-dot--ok' : ''}"></span>
         <span class="alg-name">${escHtml(n)}</span>
         <span class="alg-state">${comp ? 'compilato' : 'copiato'}</span>
+        <button class="alg-open" title="Apri questo allegato"
+          onclick="App.apriAllegato('${encodeURIComponent(g.file)}')">${_svgOpenFile}</button>
       </div>`;
     }).join('');
     const nerr = (res.errori || []).length;
@@ -914,6 +948,15 @@ const App = (() => {
     const f = state.allegatiFolder;
     if (!f) { toast('Genera prima gli allegati', 'error'); return; }
     const res = await call('apri_cartella', f);
+    if (res?.error) toast(res.error, 'error');
+  }
+
+  // Apre un singolo allegato generato.
+  async function apriAllegato(fileEnc) {
+    const f = state.allegatiFolder;
+    if (!f) { toast('Genera prima gli allegati', 'error'); return; }
+    const file = decodeURIComponent(fileEnc || '');
+    const res = await call('apri_allegato', f, file);
     if (res?.error) toast(res.error, 'error');
   }
 
@@ -1105,7 +1148,9 @@ const App = (() => {
   }
 
   async function renderChaptersList(client, animate = false) {
-    const chaptersInfo = await call('get_chapters') || [];
+    const allChapters = await call('get_chapters') || [];
+    // Nasconde i capitoli non previsti dal tipo DVR (es. super G).
+    const chaptersInfo = allChapters.filter(ch => !_hiddenForClient(ch.id, client));
     state.chaptersCache = chaptersInfo;                              // cache per navigazione prev/next
     const grid = document.getElementById('chapters-grid');
     const done = new Map(client.chapters?.map(c => [c.id, c]) || []);
@@ -7893,7 +7938,8 @@ const App = (() => {
       return;
     }
     const chaptersList = (client.chapters || [])
-      .filter(ch => (ch.form_data || ch.manual_edit) && !_isCapEscluso(ch.id))
+      .filter(ch => (ch.form_data || ch.manual_edit) && !_isCapEscluso(ch.id)
+                    && !_hiddenForClient(ch.id, client))
       .map(ch => ({
         id: ch.id,
         form_data: ch.form_data || {},
@@ -7949,7 +7995,7 @@ const App = (() => {
     init, showHome, showClient, showConfig, toggleTheme,
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
     onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
-    apriCartellaAllegati, apriCartellaAllegatiCliente,
+    apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato,
     onToggleTemplateCap, onToggleCapitoloEscluso,
     startChapter, recompileChapter, openChapterForm,
     goBackFromForm, toggleAutoSection,
