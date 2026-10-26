@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Gestione DVR Stone</string>
+	<string>Presidia</string>
 	<key>CFBundleExecutable</key>
-	<string>Gestione DVR Stone</string>
+	<string>Presidia</string>
 	<key>CFBundleIconFile</key>
 	<string>stone_icon.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -13,13 +13,13 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Gestione DVR Stone</string>
+	<string>Presidia</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.0.0</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Gestione DVR Stone usa Microsoft Word ed Excel per generare i documenti di valutazione dei rischi.</string>
+	<string>Presidia usa Microsoft Word ed Excel per generare i documenti di valutazione dei rischi.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>
