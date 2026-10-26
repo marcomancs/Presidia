@@ -1,0 +1,995 @@
+{
+  "meta": {
+    "versione": 1,
+    "esportato_il": "2026-06-11T12:24:08.367Z"
+  },
+  "anagrafica": {
+    "ragione_sociale": "Metalmeccanica Rossi S.r.l.",
+    "indirizzo": "Via Industriale 12",
+    "citta": "Bergamo",
+    "cap": "24100",
+    "provincia": "BG",
+    "telefono": "035 123456",
+    "email": "info@metalrossi.it",
+    "pec": "metalrossi@pec.it",
+    "codice_fiscale": "01234567890",
+    "partita_iva": "01234567890",
+    "settore_ateco": "C25.61 - Trattamento e rivestimento dei metalli",
+    "numero_dipendenti": 28,
+    "datore_di_lavoro": "Antonio Rossi",
+    "ruolo_datore": "Titolare",
+    "medico_competente": "Dott.ssa Elena Ferretti",
+    "rspp": "Giuseppe Verdi",
+    "rls": "Marco Colombo",
+    "dirigenti": [
+      {
+        "_id": "d1",
+        "nome": "Luca Martini",
+        "ruolo": "Responsabile Produzione"
+      },
+      {
+        "_id": "d2",
+        "nome": "Sara Galli",
+        "ruolo": "Responsabile Qualità"
+      }
+    ],
+    "preposti": [
+      {
+        "_id": "p1",
+        "nome": "Giuseppe Verdi",
+        "reparto": "Produzione"
+      },
+      {
+        "_id": "p2",
+        "nome": "Franco Esposito",
+        "reparto": "Magazzino"
+      }
+    ],
+    "addetti_antincendio": [
+      {
+        "_id": "a1",
+        "nome": "Luigi Neri",
+        "livello": "Rischio Medio"
+      },
+      {
+        "_id": "a2",
+        "nome": "Anna Ricci",
+        "livello": "Rischio Medio"
+      }
+    ],
+    "addetti_primo_soccorso": [
+      {
+        "_id": "ps1",
+        "nome": "Carla Bruni",
+        "certificazione": "BLSD + Primo Soccorso D.Lgs. 388/03"
+      }
+    ],
+    "sedi_operative_multiple": false,
+    "note_sedi": "",
+    "indirizzo_up": "Via Industriale 12, Bergamo (BG)",
+    "completato": true,
+    "_completato": true
+  },
+  "ditte_esterne": {
+    "presenti": true,
+    "ditte": [
+      {
+        "_id": "de1",
+        "azienda": "Pulizie Service S.r.l.",
+        "partita_iva": "IT02345678901",
+        "oggetto_appalto": "Pulizia locali produttivi e uffici",
+        "periodicita": "1/settimana",
+        "durata_media": "4 ore"
+      },
+      {
+        "_id": "de2",
+        "azienda": "Elettrotecnica Lombarda S.r.l.",
+        "partita_iva": "IT03456789012",
+        "oggetto_appalto": "Manutenzione ordinaria e straordinaria impianto elettrico",
+        "periodicita": "1/trimestre",
+        "durata_media": "8 ore"
+      }
+    ],
+    "_completato": true
+  },
+  "ciclo_lavoro": {
+    "gruppi": [
+      {
+        "_id": "g1",
+        "nome": "Addetti Tornitura CNC",
+        "descrizione": "Operatori addetti alla lavorazione meccanica tramite torni CNC. Settaggio, carico/scarico pezzi, controllo dimensionale con strumenti di misura.",
+        "attrezzature": [
+          {
+            "_id": "at1",
+            "nome": "Tornio CNC Mazak QTE 200"
+          },
+          {
+            "_id": "at2",
+            "nome": "Calibro digitale Mitutoyo"
+          },
+          {
+            "_id": "at3",
+            "nome": "Transpallet manuale"
+          }
+        ],
+        "prodotti_chimici": [
+          {
+            "_id": "pc1",
+            "nome": "Olio da taglio Castrol Hysol XF",
+            "esposizione_kg_sett": 2,
+            "esposizione_perc_giorn": 60,
+            "sds_allegata": true,
+            "sds_file": null
+          }
+        ],
+        "rischi": {
+          "mmc": true,
+          "traino_spinta": true,
+          "movimenti_ripetitivi": true,
+          "rumore": true,
+          "vibrazioni": false
+        }
+      },
+      {
+        "_id": "g2",
+        "nome": "Addetti Saldatura MIG/MAG",
+        "descrizione": "Saldatori addetti a giunzioni MIG/MAG su componenti in acciaio e alluminio. Lavori in posizione eretta e semi-seduta.",
+        "attrezzature": [
+          {
+            "_id": "at4",
+            "nome": "Saldatrice Lincoln Electric PowerMIG 300"
+          },
+          {
+            "_id": "at5",
+            "nome": "Maschera saldatura automatica"
+          },
+          {
+            "_id": "at6",
+            "nome": "Smerigliatrice angolare Bosch GWS 18"
+          }
+        ],
+        "prodotti_chimici": [
+          {
+            "_id": "pc2",
+            "nome": "Gas di protezione Ar/CO2 (miscela 82/18)",
+            "esposizione_kg_sett": 5,
+            "esposizione_perc_giorn": 70,
+            "sds_allegata": true,
+            "sds_file": null
+          },
+          {
+            "_id": "pc3",
+            "nome": "Sgrassante alcalino Agecom CR10",
+            "esposizione_kg_sett": 0.5,
+            "esposizione_perc_giorn": 20,
+            "sds_allegata": true,
+            "sds_file": null
+          }
+        ],
+        "rischi": {
+          "mmc": false,
+          "traino_spinta": false,
+          "movimenti_ripetitivi": true,
+          "rumore": true,
+          "vibrazioni": true
+        }
+      },
+      {
+        "_id": "g3",
+        "nome": "Addetti Magazzino",
+        "descrizione": "Addetti alla movimentazione materie prime e prodotti finiti. Carico/scarico, stoccaggio e preparazione ordini con transpallet e carrello elevatore.",
+        "attrezzature": [
+          {
+            "_id": "at7",
+            "nome": "Transpallet elettrico BT Levio"
+          },
+          {
+            "_id": "at8",
+            "nome": "Carrello elevatore Toyota 1.5t"
+          },
+          {
+            "_id": "at9",
+            "nome": "Scala a pioli in alluminio 3 m"
+          }
+        ],
+        "prodotti_chimici": [],
+        "rischi": {
+          "mmc": true,
+          "traino_spinta": true,
+          "movimenti_ripetitivi": false,
+          "rumore": false,
+          "vibrazioni": false
+        }
+      },
+      {
+        "_id": "g4",
+        "nome": "Addetti Trattamenti Superficiali",
+        "descrizione": "Operatori addetti a sgrassaggio chimico, fosfatazione e verniciatura. Zona segregata con aspirazione localizzata e DPI obbligatori.",
+        "attrezzature": [
+          {
+            "_id": "at10",
+            "nome": "Vasca sgrassaggio riscaldata"
+          },
+          {
+            "_id": "at11",
+            "nome": "Cabina verniciatura con aspirazione"
+          },
+          {
+            "_id": "at12",
+            "nome": "Semimascera A2P3, guanti nitrile, occhiali"
+          }
+        ],
+        "prodotti_chimici": [
+          {
+            "_id": "pc4",
+            "nome": "Vernice antiruggine Faren 3000",
+            "esposizione_kg_sett": 3,
+            "esposizione_perc_giorn": 50,
+            "sds_allegata": true,
+            "sds_file": null
+          },
+          {
+            "_id": "pc5",
+            "nome": "Acetone per pulizia strumenti",
+            "esposizione_kg_sett": 0.3,
+            "esposizione_perc_giorn": 10,
+            "sds_allegata": true,
+            "sds_file": null
+          }
+        ],
+        "rischi": {
+          "mmc": false,
+          "traino_spinta": false,
+          "movimenti_ripetitivi": false,
+          "rumore": false,
+          "vibrazioni": false
+        }
+      }
+    ],
+    "attrezzature_speciali": {
+      "serbatoio_gasolio": {
+        "presente": true,
+        "valore": 2000
+      },
+      "serbatoio_gpl": {
+        "presente": false
+      },
+      "bombole_gpl": {
+        "presente": false
+      },
+      "gruppo_elettrogeno": {
+        "presente": true,
+        "valore": 45
+      },
+      "silos": {
+        "presente": false
+      }
+    },
+    "_completato": true
+  },
+  "luoghi_lavoro": {
+    "locali": [
+      {
+        "_id": "l1",
+        "denominazione": "Reparto Tornitura e Fresatura",
+        "descrizione": "Area principale con 6 torni CNC e 3 frese. Pavimentazione in calcestruzzo epossidico antisdrucciolo. Illuminazione LED.",
+        "superficie_mq": 350,
+        "segnaletica_mancante": []
+      },
+      {
+        "_id": "l2",
+        "denominazione": "Reparto Saldatura",
+        "descrizione": "Area dedicata a saldatura MIG/MAG con 4 postazioni. Aspirazione localizzata su ogni postazione. Pareti ignifughe.",
+        "superficie_mq": 120,
+        "segnaletica_mancante": []
+      },
+      {
+        "_id": "l3",
+        "denominazione": "Reparto Trattamenti Superficiali",
+        "descrizione": "Zona segregata per sgrassaggio e verniciatura. Accesso limitato, DPI obbligatori, ventilazione forzata dedicata.",
+        "superficie_mq": 80,
+        "segnaletica_mancante": []
+      },
+      {
+        "_id": "l4",
+        "denominazione": "Magazzino Materie Prime",
+        "descrizione": "Stoccaggio barre, lamiere e coils. Accesso con carrello elevatore. Scaffalature metalliche certificate.",
+        "superficie_mq": 200,
+        "segnaletica_mancante": []
+      },
+      {
+        "_id": "l5",
+        "denominazione": "Magazzino Prodotto Finito",
+        "descrizione": "Stoccaggio pezzi finiti in attesa spedizione. Scaffalature metalliche a norma EN 15512.",
+        "superficie_mq": 150,
+        "segnaletica_mancante": []
+      },
+      {
+        "_id": "l6",
+        "denominazione": "Uffici Amministrativi",
+        "descrizione": "Uffici direzione, amministrazione e qualità. Postazioni VDT con sedute ergonomiche regolabili.",
+        "superficie_mq": 120,
+        "segnaletica_mancante": []
+      }
+    ],
+    "rischio_radon": false,
+    "_completato": true
+  },
+  "impianti": {
+    "elettrico": {
+      "dichiarazione_conformita": "presente",
+      "progetto_caratt": {
+        "sup_200": true,
+        "pot_6kw": true,
+        "uso_medico": false,
+        "rischio_incendio": true,
+        "norm_cei": false,
+        "non_soggetto": false
+      },
+      "progetto_stato": "presente",
+      "denuncia_esercizio": "presente",
+      "terra_caratt": {
+        "cantiere_temp": false,
+        "esplosione": false,
+        "uso_medico": false,
+        "rischio_incendio": true,
+        "no_verifiche": false
+      },
+      "terra_anno_verifica": 2024,
+      "atmosferiche": {
+        "vol_200": true,
+        "calcolo_auto": false,
+        "autoprotetta": false,
+        "lps": false
+      }
+    },
+    "termico": {
+      "dichiarazione_conformita": "presente",
+      "progetto_caratt": {
+        "gas_50kw": true,
+        "clim_46kw": true,
+        "camini_ramif": false,
+        "non_soggetto": false
+      },
+      "progetto_stato": "presente"
+    },
+    "aeraulico": {
+      "presente": true,
+      "resp_ispezione_visiva": "Giuseppe Verdi",
+      "esecut_ispezione_visiva": "Tecnico Elettrotecnica Lombarda",
+      "resp_ispezione_tecnica": "Giuseppe Verdi",
+      "esecut_ispezione_tecnica": "Ing. Marco Bianchi",
+      "tipologia": {
+        "ordinario": false,
+        "umidif_suppl": false,
+        "clima_elevata": false,
+        "fonti_esterne": true
+      },
+      "interventi": {
+        "uta": false,
+        "torri": false,
+        "condotte": true,
+        "terminali": true,
+        "microbiologico": true
+      }
+    },
+    "_completato": true
+  },
+  "mmc": {
+    "presenza_mmc": true,
+    "misurazioni": [
+      {
+        "_id": "mmc1",
+        "gruppo": "Addetti Tornitura CNC",
+        "attivita": "Carico/scarico pezzi e bobine filo saldante",
+        "peso_max": 25,
+        "frequenza": "15-20 sollevamenti/turno",
+        "durata_h": 4,
+        "distanza_m": 5,
+        "genere": "M",
+        "fasce_eta": "18-45",
+        "indice_niosh": "0.85"
+      },
+      {
+        "_id": "mmc2",
+        "gruppo": "Addetti Magazzino",
+        "attivita": "Movimentazione colli materie prime",
+        "peso_max": 30,
+        "frequenza": "30-40 sollevamenti/turno",
+        "durata_h": 6,
+        "distanza_m": 10,
+        "genere": "M",
+        "fasce_eta": "25-50",
+        "indice_niosh": "0.92"
+      }
+    ],
+    "misure_prevenzione": "Transpallet manuale e elettrico per carichi > 30 kg. Formazione MMC D.Lgs. 81/08 Titolo VI. DPI: guanti antitaglio EN388 livello D.",
+    "note": "Valutazione NIOSH effettuata il 10/03/2026. Indici NIOSH < 1 per tutti i task: rischio accettabile.",
+    "_completato": true,
+    "valutazioni": {
+      "g1": {
+        "genere": "M",
+        "fascia_eta": "20_45",
+        "denominazione_carico": "Scatole di prodotto",
+        "peso_kg": 12,
+        "num_persone": 1,
+        "frequenza_sollevamenti": 12,
+        "durata_turno": 2,
+        "distanza_trasporto": 18
+      },
+      "g3": {
+        "denominazione_carico": "Scatole ",
+        "genere": "F",
+        "fascia_eta": "sotto_20",
+        "peso_kg": 1,
+        "num_persone": 13,
+        "frequenza_sollevamenti": 1,
+        "durata_turno": 1,
+        "distanza_trasporto": 1
+      }
+    }
+  },
+  "traino_spinta": {
+    "presenza_traino_spinta": true,
+    "misurazioni": [
+      {
+        "_id": "ts1",
+        "gruppo": "Addetti Tornitura CNC",
+        "attivita": "Spinta carrelli porta-pezzi tra reparti",
+        "tipo_veicolo": "Carrello piano 4 ruote 500 kg",
+        "tipo_pavimento": "Calcestruzzo con resina epossidica",
+        "distanza_m": 30,
+        "frequenza": "10-15 spinte/turno",
+        "genere": "M",
+        "fasce_eta": "18-45"
+      },
+      {
+        "_id": "ts2",
+        "gruppo": "Addetti Magazzino",
+        "attivita": "Traino transpallet con bancale pieno",
+        "tipo_veicolo": "Transpallet manuale BT",
+        "tipo_pavimento": "Calcestruzzo liscio",
+        "distanza_m": 50,
+        "frequenza": "20-30 operazioni/turno",
+        "genere": "M",
+        "fasce_eta": "25-50"
+      }
+    ],
+    "note": "Percorsi pianeggianti, nessun dislivello. Ruote in poliuretano. Forze avvio < 300N, mantenimento < 200N.",
+    "_completato": true,
+    "valutazioni": {
+      "g1": {
+        "spinta": true,
+        "traino": true,
+        "genere": "M",
+        "durata_ore": 1,
+        "altezza_mani_cm": 14,
+        "distanza_m": 10,
+        "frequenza": 1
+      },
+      "g3": {
+        "spinta": true,
+        "traino": false,
+        "genere": "MF",
+        "durata_ore": 2,
+        "altezza_mani_cm": 14,
+        "distanza_m": 1,
+        "frequenza": 5
+      }
+    }
+  },
+  "movimenti_ripetitivi": {
+    "presenza_movimenti_ripetitivi": true,
+    "misurazioni": [
+      {
+        "_id": "mr1",
+        "gruppo": "Addetti Tornitura CNC",
+        "fasi_lavorative": "Carico/scarico mandrino, controllo dimensionale, serraggio utensili",
+        "spalla": "basso",
+        "gomito": "medio",
+        "polso": "medio",
+        "mano_dito": "alto",
+        "durata_h": 4,
+        "frequenza_azioni": "60-80 azioni/min",
+        "indice_ocra": "1.8",
+        "video_allegati": []
+      },
+      {
+        "_id": "mr2",
+        "gruppo": "Addetti Saldatura MIG/MAG",
+        "fasi_lavorative": "Posizionamento elettrodo, saldatura, sbavatura",
+        "spalla": "medio",
+        "gomito": "basso",
+        "polso": "alto",
+        "mano_dito": "alto",
+        "durata_h": 5,
+        "frequenza_azioni": "40-60 azioni/min",
+        "indice_ocra": "2.1",
+        "video_allegati": []
+      }
+    ],
+    "note": "Valutazione OCRA 10/03/2026. Rotazione mansioni ogni 2 ore. OCRA 2.1 saldatori: zona gialla, monitoraggio semestrale previsto.",
+    "_completato": true,
+    "valutazioni": {
+      "g1": {
+        "frequenza": "alta",
+        "forza": "lieve",
+        "postura_spalla": "neutra",
+        "postura_gomito": "lieve",
+        "postura_polso": "moderata",
+        "postura_mano_dito": "moderata"
+      },
+      "g2": {
+        "fase_lavoro": "Saldatura",
+        "frequenza": "bassa",
+        "forza": "lieve",
+        "postura_spalla": "lieve",
+        "postura_gomito": "estrema",
+        "postura_mano_dito": "lieve",
+        "postura_polso": "lieve",
+        "durata_ore": 2
+      }
+    }
+  },
+  "rumore_vibrazioni": {
+    "misurazioni": [
+      {
+        "_id": "rv1",
+        "gruppo": "Addetti Tornitura CNC",
+        "tipo": "rumore",
+        "attrezzatura": "Tornio CNC Mazak",
+        "tempo_esposizione_h": 6,
+        "lex8h": 83,
+        "unita": "dB(A)",
+        "tempo_esposizione_min": 11,
+        "rumore_dba": 60,
+        "rumore_dbc": 60,
+        "rumore_ppeak": 58,
+        "vib_valore": 45,
+        "vib_unita": "mm_s2",
+        "vib_hav": true
+      },
+      {
+        "_id": "rv2",
+        "gruppo": "Addetti Saldatura MIG/MAG",
+        "tipo": "rumore",
+        "attrezzatura": "Saldatrice + smerigliatrice",
+        "tempo_esposizione_h": 4,
+        "lex8h": 78,
+        "unita": "dB(A)",
+        "rumore_dba": 45,
+        "rumore_dbc": 76,
+        "rumore_ppeak": 22
+      },
+      {
+        "_id": "rv3",
+        "gruppo": "Addetti Saldatura MIG/MAG",
+        "tipo": "vibrazioni_mano_braccio",
+        "attrezzatura": "Smerigliatrice angolare Bosch GWS 18",
+        "tempo_esposizione_h": 2,
+        "valore": 2.1,
+        "unita": "m/s²"
+      }
+    ],
+    "strumentazione": "Fonometro Brüel & Kjær 2250 cal. 12/2025. Accelerometro Larson Davis HVM100 cal. 01/2026.",
+    "data_misurazioni": "2026-03-10",
+    "dpi": "Cuffie 3M Peltor X4A (SNR 33 dB) per tornitura. Guanti antivibranti per smerigliatrice.",
+    "note": "Lex,8h 83 dB(A) tornitura: obbligo DPI e sorveglianza sanitaria attiva.",
+    "_completato": true
+  },
+  "valutazione_incendio": {
+    "aree": [
+      {
+        "_id": "ai1",
+        "numero": 1,
+        "descrizione": "Reparto Produzione (Tornitura e Fresatura) - 350 mq",
+        "mat_comb": {
+          "nessuno": false,
+          "carta": false,
+          "imballaggio": true,
+          "plastici": true,
+          "schiuma": false,
+          "legno": false,
+          "arredi": false,
+          "pareti": false,
+          "altro": false
+        },
+        "sost_infiamm": {
+          "nessuna": false,
+          "vernici_solventi": false,
+          "adesivi": false,
+          "metano": false,
+          "propano": true,
+          "ossigeno": true,
+          "acetilene": false,
+          "benzina": false,
+          "gasolio": true,
+          "manufatti": false,
+          "chimici_reattivi": false,
+          "altro": false
+        },
+        "sorgenti_innesco": {
+          "nessuna": false,
+          "impianto_elettrico": true,
+          "impianto_termico": false,
+          "macchine_calore": false,
+          "fiamme_scintille": true,
+          "attriti": true,
+          "fiamme_libere": false,
+          "atmosfere_esplosive": false,
+          "altro": false
+        },
+        "contesto": {
+          "c1": false,
+          "c2": false,
+          "c3": false,
+          "c4": false,
+          "c5": false,
+          "c6": false
+        },
+        "num_lavoratori": 12,
+        "num_altri": 0,
+        "tipologia_occupanti": {
+          "to1": true,
+          "to2": false,
+          "to3": false,
+          "to4": false,
+          "to5": false,
+          "to6": false
+        },
+        "beni_esposti": {
+          "be1": false,
+          "be2": true
+        },
+        "e1": {
+          "e1_1": true,
+          "e1_2": false,
+          "e1_3": true,
+          "e1_4": false,
+          "e1_5": false,
+          "e1_6": true
+        },
+        "e2": {
+          "e2_1": false,
+          "e2_2": true,
+          "e2_3": false,
+          "e2_4": true,
+          "e2_5": false,
+          "e2_6": true,
+          "e2_7": true,
+          "e2_8": false,
+          "e2_9": true
+        },
+        "e3": {
+          "e3_1": false,
+          "e3_2": false,
+          "e3_3": false,
+          "e3_4": true,
+          "e3_5": false
+        },
+        "e4": {
+          "e4_1": false,
+          "e4_2": true,
+          "e4_3": false
+        },
+        "e5": {
+          "e5_1": false,
+          "e5_2": true
+        }
+      },
+      {
+        "_id": "ai2",
+        "numero": 2,
+        "descrizione": "Reparto Saldatura - 120 mq",
+        "mat_comb": {
+          "nessuno": false,
+          "carta": false,
+          "imballaggio": false,
+          "plastici": false,
+          "schiuma": false,
+          "legno": false,
+          "arredi": false,
+          "pareti": false,
+          "altro": false
+        },
+        "sost_infiamm": {
+          "nessuna": false,
+          "vernici_solventi": false,
+          "adesivi": false,
+          "metano": false,
+          "propano": false,
+          "ossigeno": true,
+          "acetilene": false,
+          "benzina": false,
+          "gasolio": false,
+          "manufatti": false,
+          "chimici_reattivi": false,
+          "altro": false
+        },
+        "sorgenti_innesco": {
+          "nessuna": false,
+          "impianto_elettrico": false,
+          "impianto_termico": false,
+          "macchine_calore": false,
+          "fiamme_scintille": true,
+          "attriti": false,
+          "fiamme_libere": true,
+          "atmosfere_esplosive": false,
+          "altro": false
+        },
+        "contesto": {
+          "c1": false,
+          "c2": false,
+          "c3": false,
+          "c4": false,
+          "c5": false,
+          "c6": false
+        },
+        "num_lavoratori": 6,
+        "num_altri": 0,
+        "tipologia_occupanti": {
+          "to1": true,
+          "to2": false,
+          "to3": false,
+          "to4": false,
+          "to5": false,
+          "to6": false
+        },
+        "beni_esposti": {
+          "be1": false,
+          "be2": true
+        },
+        "e1": {
+          "e1_1": true,
+          "e1_2": false,
+          "e1_3": true,
+          "e1_4": false,
+          "e1_5": false,
+          "e1_6": true
+        },
+        "e2": {
+          "e2_1": false,
+          "e2_2": true,
+          "e2_3": false,
+          "e2_4": true,
+          "e2_5": true,
+          "e2_6": true,
+          "e2_7": true,
+          "e2_8": false,
+          "e2_9": true
+        },
+        "e3": {
+          "e3_1": false,
+          "e3_2": false,
+          "e3_3": false,
+          "e3_4": true,
+          "e3_5": true
+        },
+        "e4": {
+          "e4_1": false,
+          "e4_2": true,
+          "e4_3": false
+        },
+        "e5": {
+          "e5_1": false,
+          "e5_2": true
+        }
+      },
+      {
+        "_id": "ai3",
+        "numero": 3,
+        "descrizione": "Magazzini (MP + PF) - 350 mq",
+        "mat_comb": {
+          "nessuno": false,
+          "carta": false,
+          "imballaggio": true,
+          "plastici": false,
+          "schiuma": false,
+          "legno": false,
+          "arredi": false,
+          "pareti": false,
+          "altro": false
+        },
+        "sost_infiamm": {
+          "nessuna": true,
+          "vernici_solventi": false,
+          "adesivi": false,
+          "metano": false,
+          "propano": false,
+          "ossigeno": false,
+          "acetilene": false,
+          "benzina": false,
+          "gasolio": false,
+          "manufatti": false,
+          "chimici_reattivi": false,
+          "altro": false
+        },
+        "sorgenti_innesco": {
+          "nessuna": false,
+          "impianto_elettrico": true,
+          "impianto_termico": false,
+          "macchine_calore": false,
+          "fiamme_scintille": false,
+          "attriti": false,
+          "fiamme_libere": false,
+          "atmosfere_esplosive": false,
+          "altro": false
+        },
+        "contesto": {
+          "c1": false,
+          "c2": false,
+          "c3": false,
+          "c4": false,
+          "c5": false,
+          "c6": false
+        },
+        "num_lavoratori": 4,
+        "num_altri": 0,
+        "tipologia_occupanti": {
+          "to1": true,
+          "to2": false,
+          "to3": false,
+          "to4": false,
+          "to5": false,
+          "to6": false
+        },
+        "beni_esposti": {
+          "be1": false,
+          "be2": true
+        },
+        "e1": {
+          "e1_1": true,
+          "e1_2": false,
+          "e1_3": true,
+          "e1_4": false,
+          "e1_5": false,
+          "e1_6": true
+        },
+        "e2": {
+          "e2_1": false,
+          "e2_2": true,
+          "e2_3": false,
+          "e2_4": false,
+          "e2_5": false,
+          "e2_6": true,
+          "e2_7": true,
+          "e2_8": false,
+          "e2_9": false
+        },
+        "e3": {
+          "e3_1": false,
+          "e3_2": false,
+          "e3_3": false,
+          "e3_4": false,
+          "e3_5": false
+        },
+        "e4": {
+          "e4_1": false,
+          "e4_2": true,
+          "e4_3": false
+        },
+        "e5": {
+          "e5_1": false,
+          "e5_2": true
+        }
+      }
+    ],
+    "_completato": true
+  },
+  "classificazione_incendio": {
+    "criteri": {
+      "dpr151": true,
+      "affollamento_100": false,
+      "superficie_1000": true,
+      "piani_quote": false,
+      "combustibili_900": false,
+      "sostanze_pericolose": true,
+      "lavorazioni_pericolose": true
+    },
+    "regole_tecniche": {
+      "v1": true,
+      "v2": false,
+      "v3": false,
+      "v4": false
+    },
+    "strategia": {
+      "comp_verso_altre": "si",
+      "comp_interna": "si",
+      "esodo_superfici": true,
+      "esodo_aperture": true,
+      "esodo_porte": true,
+      "esodo_segnaletica": true,
+      "esodo_illuminazione": true,
+      "esodo_porte_pubblico": "na",
+      "affollamento_max": 28,
+      "affollamento_07": true,
+      "num_vie_esodo": 4,
+      "vie_esodo_ok": true,
+      "corridoio_30m": "si",
+      "corridoio_45m": "na",
+      "percorsi_60m": true,
+      "altezza_2m": true,
+      "larghezza_ok": true,
+      "gest_deposito": true,
+      "gest_ventilazione": true,
+      "gest_innesco": true,
+      "gest_divieti": true,
+      "gest_efficienza": true,
+      "gest_misure": true,
+      "gest_segnaletica": true,
+      "gest_lavori_caldo": "si",
+      "est_13a": true,
+      "est_89b": false,
+      "est_cdf": "na",
+      "estintori_lista": [
+        {
+          "_id": "est1",
+          "tipo": "polvere_abc",
+          "quantita": 12
+        },
+        {
+          "_id": "est2",
+          "tipo": "co2",
+          "quantita": 3
+        }
+      ],
+      "est_dist_30m": true,
+      "est_posizione": true,
+      "est_idrici": false,
+      "est_non_cond": true,
+      "idranti_sprinkler": "si",
+      "est_manutenzione": true,
+      "allarme_segnali": true,
+      "allarme_sicurezza": true,
+      "irai": "na",
+      "fumi_aperture": true,
+      "fumi_piano": "si",
+      "op_accessi": true,
+      "op_accessi_protetti": "si",
+      "imp_el_conf": true,
+      "imp_ter_conf": true,
+      "imp_clim_conf": true,
+      "imp_disattivabili": true
+    },
+    "_completato": true
+  },
+  "emergenza_formazione": {
+    "criteri_piano": {
+      "almeno_10": true,
+      "pubblico_50": false,
+      "allegato1": true
+    },
+    "livello_formazione": "2",
+    "idoneita_tecnica": "necessaria",
+    "_completato": true
+  },
+  "stress_lavoro": {
+    "indicatori": {
+      "infortuni": "diminuito",
+      "malattia": "inalterato",
+      "perc_assenze": "inalterato",
+      "ferie_non_godute": "inalterato",
+      "trasferimenti": "diminuito",
+      "rotazione": "inalterato",
+      "sanzioni": "diminuito",
+      "visite_straord": "inalterato",
+      "lamentele": "inalterato",
+      "istanze": "inalterato"
+    },
+    "_completato": true
+  },
+  "near_miss": {
+    "resp_ricezione": "Giuseppe Verdi",
+    "resp_analisi": "Giuseppe Verdi",
+    "datore_lavoro": "Antonio Rossi",
+    "rspp": "Giuseppe Verdi",
+    "modalita_trasmissione": "cartaceo_buca",
+    "forma_anonima": true,
+    "_completato": true
+  },
+  "_calcolati": {
+    "livello_rischio_incendio": "NON_Basso",
+    "piano_emergenza_necessario": true,
+    "near_miss_forma_anonima": true
+  }
+}

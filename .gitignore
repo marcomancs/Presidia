@@ -10,8 +10,9 @@ Sorgenti_per_Windows.zip
 Gestione DVR Stone.zip
 
 # DATI CLIENTI: mai pubblicati (restano nei Documenti di ogni PC)
-Supporto DVR Stone/03_Cartella clienti/
+# (vale per entrambe le cartelle brand: stone/ ed ecoservizi/)
+**/Supporto DVR Stone/03_Cartella clienti/
 
-# Backup/archivi dentro il Supporto: non vanno nel repo (i file ci sono gia' scompattati)
-Supporto DVR Stone/**/*.zip
-Supporto DVR Stone/**/*.bak*
+# Backup/archivi dentro il Supporto: non vanno nel repo
+**/Supporto DVR Stone/**/*.zip
+**/Supporto DVR Stone/**/*.bak*
