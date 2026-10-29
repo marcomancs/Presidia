@@ -3638,3 +3638,51 @@ html[data-theme="dark"] .theme-icon-moon { display: block; }
 .alg-open:hover { background: var(--gray-100, #eef0f2); color: var(--blue-800, #103D5E); }
 :root:not([data-theme="light"]) .alg-open:hover,
 :root[data-theme="dark"] .alg-open:hover { background: rgba(255,255,255,.06); }
+
+/* ── Indice allegati includi/escludi ─────────────────────────────────── */
+.alg-index { margin: 4px 0 16px; }
+.algx-hdr { font-size: 12.5px; color: var(--gray-500); margin-bottom: 8px; }
+.algx-hdr b { color: var(--blue-800, #103D5E); }
+.algx-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px; }
+.algx-row { display: flex; align-items: center; gap: 10px; padding: 7px 11px;
+  background: var(--surface); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 12.5px; }
+.algx-row.algx-off { opacity: .55; }
+.algx-n { font-weight: 700; color: var(--text); white-space: nowrap; }
+.algx-t { flex: 1; color: var(--gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.algx-sn { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.algx-b { padding: 3px 11px; border: 1.5px solid var(--gray-300); background: var(--surface);
+  color: var(--gray-500); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.algx-b:first-child { border-radius: 7px 0 0 7px; }
+.algx-b:last-child { border-radius: 0 7px 7px 0; margin-left: -1.5px; }
+.algx-b.algx-on { background: #2e9e5b; border-color: #2e9e5b; color: #fff; }
+.algx-b.algx-no { background: #c0392b; border-color: #c0392b; color: #fff; }
+.algx-m { width: 10px; color: var(--blue-800, #103D5E); font-weight: 900; flex: 0 0 auto; }
+
+/* Ricerca DPI (elenco 57) */
+.dpi-search { width: 100%; box-sizing: border-box; padding: 6px 10px; margin: 2px 0 6px;
+  border: 1.5px solid var(--gray-300); border-radius: var(--radius-sm); font-size: 12.5px;
+  font-family: inherit; background: var(--surface); color: var(--text); outline: none; }
+.dpi-search:focus { border-color: var(--blue-800, #103D5E); }
+
+/* Tastino magico: mostra/nascondi capitoli esclusi */
+.ch-magic { margin-left: 12px; padding: 4px 11px; border: 1.5px solid var(--gray-300);
+  background: var(--surface); color: var(--blue-800, #103D5E); font-size: 12px; font-weight: 600;
+  border-radius: 999px; cursor: pointer; font-family: inherit; vertical-align: middle; }
+.ch-magic:hover { border-color: var(--blue-800, #103D5E); background: rgba(16,61,94,.05); }
+
+/* Bottoni sezione Allegati (su sfondo bianco — visibili) */
+.alg-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
+  font-family: inherit; padding: 8px 14px; border-radius: 9px; cursor: pointer; transition: all .13s ease;
+  background: var(--surface); color: var(--blue-800, #103D5E); border: 1.5px solid var(--gray-300); }
+.alg-btn:hover { border-color: var(--blue-800, #103D5E); background: rgba(16,61,94,.05); }
+.alg-btn--solid { background: var(--blue-800, #103D5E); color: #fff; border-color: var(--blue-800, #103D5E); }
+.alg-btn--solid:hover { background: #0c3049; filter: none; }
+
+/* DPI a tendina (menù a scomparsa) */
+.dpi-details { border: 1.5px solid var(--gray-200); border-radius: var(--radius-sm); padding: 0 10px; margin-bottom: 8px; background: var(--surface); }
+.dpi-summary { cursor: pointer; padding: 9px 2px; font-size: 13px; font-weight: 600; color: var(--text); list-style: none; }
+.dpi-summary::-webkit-details-marker { display: none; }
+.dpi-summary::before { content: "▸"; margin-right: 8px; color: var(--gray-500); font-size: 11px; }
+.dpi-details[open] .dpi-summary::before { content: "▾"; }
+.dpi-hint { font-weight: 400; font-size: 11px; color: var(--gray-500); }
+.dpi-details .cap2-dpi-checks { max-height: 260px; overflow-y: auto; margin-bottom: 10px; }

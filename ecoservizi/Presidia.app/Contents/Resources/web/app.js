@@ -701,7 +701,7 @@ const App = (() => {
     if (notice) {
       const det = _rilevaTipoDvrDalJson(raw);
       const isSuper = det === 'super_g';
-      notice.innerHTML = `Dal JSON risulta un <b>DVR ${isSuper ? 'Super G' : 'normale'}</b>` +
+      notice.innerHTML = `Dal JSON risulta un <b>DVR ${isSuper ? 'Super G' : 'completo (SGS)'}</b>` +
         ` — potrai confermare o cambiare il tipo nella scheda.`;
       notice.style.display = '';
     }
@@ -886,6 +886,7 @@ const App = (() => {
       _renderClientSteps(state.currentClient,
         _capNonEsclusi(state.currentClient).filter(ch => ch.form_data || ch.output_path).length,
         _totCap(state.currentClient));
+      if (state.clientSection === 'allegati') _renderAllegatiIndex();
     } catch (e) {}
   }
 
@@ -909,6 +910,7 @@ const App = (() => {
     // compatto altrove (es. Capitoli) ma sempre riapribile.
     state.dvrTypeExpanded = (name === 'allegati' || name === 'menu');
     if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+    if (name === 'allegati') _renderAllegatiIndex();
   }
 
   async function generaAllegati() {
@@ -942,6 +944,48 @@ const App = (() => {
         · usa <b>Apri cartella</b> in alto per vederli</div>
       <div class="alg-list">${righe}</div>`;
     toast('Allegati generati', 'success');
+  }
+
+  // Indice allegati con includi/escludi (il tecnico corregge i SI/NO).
+  async function _renderAllegatiIndex() {
+    const client = state.currentClient;
+    const jp = client?.json_path;
+    const box = document.getElementById('alg-index');
+    if (!box) return;
+    if (!jp) { box.innerHTML = ''; return; }
+    const tipo = _tipoDvrCliente(client);
+    const res = await call('get_allegati_index', jp, tipo);
+    if (!res || res.error) { box.innerHTML = ''; return; }
+    const rows = (res.allegati || []).map(a => {
+      const si = a.stato === 'SI';
+      return `<div class="algx-row${si ? '' : ' algx-off'}">
+        <span class="algx-n">Allegato ${a.numero}</span>
+        <span class="algx-t">${escHtml(a.titolo || '')}</span>
+        <span class="algx-sn">
+          <button class="algx-b${si ? ' algx-on' : ''}" onclick="App.onToggleAllegato(${a.numero},'SI')">SI</button>
+          <button class="algx-b${!si ? ' algx-no' : ''}" onclick="App.onToggleAllegato(${a.numero},'NO')">NO</button>
+        </span>
+        ${si ? `<button class="alg-open" title="Apri questo allegato" onclick="App.apriAllegatoN(${a.numero})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>` : '<span style="width:24px"></span>'}
+        <span class="algx-m" title="impostato a mano">${a.manual ? '•' : ''}</span>
+      </div>`;
+    }).join('');
+    box.innerHTML =
+      `<div class="algx-hdr">Allegati da generare — includi/escludi a mano (il <b>•</b> = modificato dal tecnico)</div>
+       <div class="algx-list">${rows}</div>`;
+  }
+
+  async function apriAllegatoN(numero) {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    const res = await call('apri_allegato_numero', jp, numero);
+    if (res?.error) toast(res.error, 'error');
+  }
+
+  async function onToggleAllegato(numero, stato) {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    await call('imposta_allegato_override', jp, numero, stato);
+    _renderAllegatiIndex();
   }
 
   async function apriCartellaAllegati() {
@@ -1147,6 +1191,11 @@ const App = (() => {
     if (c?.json_path) _askSurveyEmail(c.json_path, c.name);
   }
 
+  function toggleShowExcluded() {
+    state.showExcluded = !state.showExcluded;
+    if (state.currentClient) renderChaptersList(state.currentClient);
+  }
+
   async function renderChaptersList(client, animate = false) {
     const allChapters = await call('get_chapters') || [];
     // Nasconde i capitoli non previsti dal tipo DVR (es. super G).
@@ -1167,12 +1216,23 @@ const App = (() => {
     const chIco = (onclick, title, svg) =>
       `<button class="ch-ico-btn" title="${title}" onclick="${onclick}">${svg}</button>`;
 
-    grid.innerHTML = '<div id="client-warn-banner"></div><div class="chapters-section-hdr">Capitoli</div>' + chaptersInfo.map((ch, idx) => {
+    const _nEscl = chaptersInfo.filter(ch => _isCapEscluso(ch.id)).length;
+    const _magicBtn = _nEscl > 0
+      ? `<button class="ch-magic" onclick="App.toggleShowExcluded()" title="Mostra/nascondi i capitoli non applicabili">
+           ✨ ${state.showExcluded ? 'Nascondi' : 'Mostra'} capitoli esclusi (${_nEscl})
+         </button>`
+      : '';
+    grid.innerHTML = '<div id="client-warn-banner"></div>'
+      + `<div class="chapters-section-hdr">Capitoli ${_magicBtn}</div>`
+      + chaptersInfo.map((ch, idx) => {
       const chapterEntry = done.get(ch.id);
       const escluso      = _isCapEscluso(ch.id);
       const isActive     = ch.active && !escluso;
 
-      // Capitolo escluso: riga attenuata + pulsante "Includi"
+      // Capitolo escluso: di default NASCOSTO del tutto (feedback Sara
+      // 2026-10-29). Si rivede col "tastino magico" (state.showExcluded).
+      if (escluso && !state.showExcluded) return '';
+      // Capitolo escluso (solo se si è scelto di mostrarli): riga attenuata.
       if (escluso) {
         const iconExc = buildChapterIcon(ch.id);
         return `
@@ -2579,17 +2639,50 @@ const App = (() => {
   /* ── Cap2 Editor ────────────────────────────────────────────────────────── */
 
   const DPI_OPTIONS = [
-    'Calzature antinfortunistiche (EN 20345)', 'Calzature antiscivolo (EN 20347)',
-    'Indumenti di protezione (EN 13688)', 'Elmetto', 'Otoprotettori',
-    'Occhiali', 'Maschera antipolvere', 'Maschera nebbie acquose',
-    'Maschera nebbie oleose', 'Maschera per bioaerosol', 'Maschera antigas',
-    'Filtri per maschera', 'Dispositivi anticaduta', 'Schermi inattinici',
-    'Guanti (rischi meccanici)', 'Guanti (chimici/biologici)',
-    'Guanti antitaglio (EN 1082)',
-    'Guanti prot. freddo', 'Guanti prot. caldo', 'Guanti per saldatori',
-    'Guanti dielettrici', 'Indumenti alta visibilità',
-    'Indum. contro intemperie', 'Indum. protezione freddo',
-    'Indum. protezione caldo', 'Cuffia TNT',
+    'Elmetto per industria ed edilizia (EN 397)',
+    'Elmetto per lavori in quota tecnici (EN 12492)',
+    'Elmetto per lavori elettrici (EN 50365)', 'Scarpe di sicurezza S1 (EN ISO 20345)',
+    'Scarpe di sicurezza S1P (EN ISO 20345)', 'Scarpe di sicurezza S2 (EN ISO 20345)',
+    'Scarpe di sicurezza S3 (EN ISO 20345)', 'Scarpe da lavoro o antiscivolo (EN ISO 20347)',
+    'Maschera antipolvere FFP1 (EN 149)', 'Maschera antipolvere FFP2 (EN 149)',
+    'Maschera antipolvere FFP3 (EN 149)', 'Maschera per nebbie acquose (EN 149)',
+    'Maschera per nebbie oleose (EN 149)', 'Maschera per bioaerosol (EN 149)',
+    'Semimaschera e maschera a pieno facciale antigas (EN 136)',
+    'Semimaschera filtrante con valvole integrate (EN 405)',
+    'Filtri per maschere antigas (EN 14387)', 'Filtri antiparticolato (EN 143)',
+    'Filtri per saldatura (16321-2)',
+    'Occhiali protettivi contro urti, schegge e spruzzi (EN ISO 16321-1)',
+    'Occhiali a mascherina per polveri fini, gas o liquidi (EN ISO 16321-1)',
+    'Visiere e schermi facciali (EN ISO 16321-1)',
+    'Schermi e filtri per saldatura (EN 16321-2 + EN 175)',
+    'Guanti per rischi meccanici (EN 388)',
+    'Guanti per rischi chimici e biologici (EN ISO 374)',
+    'Guanti antitaglio in maglia metallica (EN 1082)',
+    'Guanti di protezione dal calore (EN 407)', 'Guanti di protezione dal freddo (EN 511)',
+    'Guanti per saldatori (EN 12477)',
+    'Guanti isolanti per lavori elettrici (dielettrici) (EN 60903)',
+    'Guanti di protezione per utilizzatori di motosega (EN ISO 11393-4)',
+    'Guanti antivibrazione (EN ISO 10819)', 'Cuffie antirumore (EN 352)',
+    'Tappi auricolari (EN 352)', 'Archetti auricolari (EN 352)',
+    'Indumenti da lavoro con protezione generica (EN ISO 13688)',
+    'Indumenti ad alta visibilità (EN ISO 20471)',
+    'Indumenti di protezione contro agenti chimici (EN 13034)',
+    'Indumenti di protezione contro polveri pericolose (EN 13982)',
+    'Indumenti contro le intemperie (EN 343)',
+    'Indumenti protettivi per saldatura (EN ISO 11611)',
+    'Indumenti protettivi contro tagli da coltelli a mano (EN 13998)',
+    'Indumenti di protezione dal freddo (EN 342)',
+    'Indumenti di protezione dal caldo e dalle fiamme (EN ISO 11612)',
+    'Pantaloni antitaglio per motosega (EN ISO 11393-2)',
+    'Giacca antitaglio per motosega (EN ISO 11393-6)',
+    'Calzature protettive contro il taglio da motosega (EN ISO 17249)',
+    'Ghette antitaglio per motosega (EN ISO 11393-5)',
+    'Protezioni antitaglio per busto e braccia (EN ISO 11393-6, secondo il dispositivo)',
+    'Imbracature anticaduta (EN 361)', 'Cordini di trattenuta e posizionamento (EN 358)',
+    'Assorbitori di energia (dissipatori) (EN 355)',
+    'Dispositivi anticaduta retrattili (EN 360)', 'Dispositivi di ancoraggio (EN 795)',
+    'Connettori (EN 362)', 'Cappello anti UV (EN 13758-2)',
+    'Abbigliamento anti UV (EN 13758-2)',
   ];
 
   // Lista schede in JS (speculare alla lista Python)
@@ -2764,8 +2857,11 @@ const App = (() => {
           ${ic('plus',11)} Aggiungi fase
         </button>
 
-        <div class="cap2-section-label" style="margin-top:8px">DPI — Dispositivi di Protezione Individuale</div>
-        <div class="cap2-dpi-checks" id="${gid}-dpi">${dpiGroupChecks}</div>
+        <details class="dpi-details" style="margin-top:8px">
+          <summary class="dpi-summary">DPI — Dispositivi di Protezione Individuale <span class="dpi-hint">(clicca per aprire)</span></summary>
+          <input class="dpi-search" placeholder="Cerca DPI…" oninput="App.filterDpi(this)">
+          <div class="cap2-dpi-checks" id="${gid}-dpi">${dpiGroupChecks}</div>
+        </details>
 
         <div class="cap2-section-label">Matrice Valutazione Rischi (P × D) — <strong>${nome}</strong></div>
         <div style="overflow-x:auto">
@@ -2783,6 +2879,17 @@ const App = (() => {
     </div>`;
   }
 
+  // Filtra l'elenco DPI (57 voci) in base al testo digitato.
+  function filterDpi(inp) {
+    const q = (inp.value || '').toLowerCase().trim();
+    let cont = inp.nextElementSibling;
+    while (cont && !cont.classList.contains('cap2-dpi-checks')) cont = cont.nextElementSibling;
+    if (!cont) return;
+    cont.querySelectorAll('.dpi-check').forEach(l => {
+      l.style.display = (!q || l.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    });
+  }
+
   function buildFaseRow(gid, fi, fase) {
     const faseName = escAttr((fase && fase.fase) || '');
     const faseDpi = (fase && Array.isArray(fase.dpi)) ? fase.dpi : [];
@@ -2798,8 +2905,11 @@ const App = (() => {
         <button class="btn-remove-row" onclick="App.removeCap2Fase(this)">${ic('x',12)}</button>
       </div>
       <div class="cap2-fase-dpi">
-        <div class="cap2-fase-dpi-label">DPI di questa fase</div>
-        <div class="cap2-dpi-checks cap2-fase-dpi-checks" id="${gid}-fase${fi}-dpi">${dpiChecks}</div>
+        <details class="dpi-details">
+          <summary class="dpi-summary">DPI di questa fase <span class="dpi-hint">(clicca per aprire)</span></summary>
+          <input class="dpi-search" placeholder="Cerca DPI…" oninput="App.filterDpi(this)">
+          <div class="cap2-dpi-checks cap2-fase-dpi-checks" id="${gid}-fase${fi}-dpi">${dpiChecks}</div>
+        </details>
       </div>
     </div>`;
   }
@@ -3959,18 +4069,6 @@ const App = (() => {
         Seleziona i <b>capitoli applicabili</b> a questo cliente. I capitoli impostati
         su <b>NO</b> non verranno generati nel DVR. La proposta qui sotto è calcolata
         automaticamente dai rischi del cliente: puoi modificarla.
-      </div>
-      <div class="c20-field-row c20-field-row--full" style="margin:4px 0 8px">
-        <label class="c20-field-lbl" style="flex:1">Tipo DVR</label>
-        <span class="c20-sn-group">
-          <button class="field-sn-btn${!sg ? ' field-sn-active' : ''}" onclick="App.onCap0SuperG('${fieldId}',false)">Completo</button>
-          <button class="field-sn-btn${sg ? ' field-sn-active' : ''}" onclick="App.onCap0SuperG('${fieldId}',true)">super G</button>
-        </span>
-      </div>
-      <div class="cap0-superg-note" style="font-size:12px;color:var(--gray-600);margin:0 0 10px;${sg ? '' : 'display:none'}">
-        <b>DVR super G</b>: esclusi di default Agenti biologici, Movimentazione manuale carichi,
-        Movimenti ripetitivi, Near Miss, Rumore, Vibrazioni e DUVRI (puoi comunque ri-attivarli
-        singolarmente qui sotto).
       </div>
       <div class="c20-field-row c20-field-row--full" style="margin:4px 0 10px">
         <label class="c20-field-lbl" style="flex:1">Data emissione (sopralluogo)</label>
@@ -7539,7 +7637,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Gestione DVR Stone · versione 1.1</div>
+        <div class="release-version">Presidia · versione 1.2</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
@@ -7995,8 +8093,8 @@ const App = (() => {
     init, showHome, showClient, showConfig, toggleTheme,
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
     onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
-    apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato,
-    onToggleTemplateCap, onToggleCapitoloEscluso,
+    apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
+    onToggleTemplateCap, onToggleCapitoloEscluso, toggleShowExcluded,
     startChapter, recompileChapter, openChapterForm,
     goBackFromForm, toggleAutoSection,
     onFieldInput, onOptionSelect, onHomeSearch, onHomeFilter,
@@ -8013,7 +8111,7 @@ const App = (() => {
     editChapter, exportChapterFromHistory, previewChapterFromHistory,
     // Cap2 editor
     toggleCap2Group, onCap2FieldChange, onCap2SchedaChange,
-    addCap2Fase, removeCap2Fase, onCap2FaseDpiToggle,
+    addCap2Fase, removeCap2Fase, onCap2FaseDpiToggle, filterDpi,
     // Cap3 editor
     toggleCap3Locale, onCap3FieldChange, onCap3RischioChange, onCap3PresenteToggle,
     onCap3AddManual, onCap3AddLocale, onCap3RemoveLocale,
