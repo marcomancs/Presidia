@@ -155,9 +155,10 @@ const App = (() => {
       }
     }, delay);
 
-    // NB: distribuzione via Git (GitHub Desktop → Pull). Il controllo
-    // aggiornamenti in-app è DISATTIVATO per non creare conflitti al Pull.
-    // (Per riattivarlo: setTimeout(() => { _checkUpdates(); }, delay + 1200);)
+    // Notifica (SOLO informativa) se è uscita una nuova versione su GitHub:
+    // non scarica nulla, mostra un avviso con il link al repo. Ritardato per
+    // non rallentare l'avvio; eventuali errori di rete sono silenziosi.
+    setTimeout(() => { _checkUpdates(); }, delay + 1500);
   }
 
   function waitForPywebview() {    return new Promise(resolve => {
@@ -7779,33 +7780,32 @@ const App = (() => {
     try {
       const info = await call('updater_check');
       if (!info || !info.ok) return;                       // offline o errore → silenzio
-      const nSupp = (info.supporto_changed || []).length;
-      if (!info.app_update && nSupp === 0) return;          // già aggiornato
+      if (!info.app_update) return;                        // già aggiornato
       state._updateInfo = info;
       _renderUpdateBanner(info);
     } catch (e) { /* l'assenza di rete non deve disturbare l'avvio */ }
   }
 
+  // Banner SOLO informativo: avvisa che c'è una nuova versione su GitHub e
+  // offre un pulsante che apre il repo. NON scarica né modifica file in locale
+  // (l'aggiornamento si fa con GitHub Desktop → Pull, come sempre).
   function _renderUpdateBanner(info) {
     const old = document.getElementById('update-banner');
     if (old) old.remove();
-    const nSupp = (info.supporto_changed || []).length;
-    const appUp = !!info.app_update;
-    const parts = [];
-    if (appUp) parts.push(`nuova versione app (${escHtml(info.app_version_remote || '')})`);
-    if (nSupp) parts.push(`${nSupp} file di supporto da aggiornare`);
-    let btns = '';
-    if (nSupp) btns += `<button class="ub-btn ub-primary" onclick="App.updaterApplySupporto()">Aggiorna supporto (${nSupp})</button>`;
-    if (appUp) btns += `<button class="ub-btn" onclick="App.updaterDownloadApp()">Scarica nuova app</button>`;
+    const ver = escHtml(info.app_version_remote || '');
     const bar = document.createElement('div');
     bar.id = 'update-banner';
     bar.className = 'update-banner';
     bar.innerHTML =
       `<span class="ub-ico">${ic('download', 16)}</span>` +
-      `<span class="ub-txt">Aggiornamento disponibile · ${parts.join(' · ')}</span>` +
-      `<span class="ub-actions">${btns}</span>` +
+      `<span class="ub-txt">È disponibile una nuova versione${ver ? ` (${ver})` : ''} · scaricala da GitHub</span>` +
+      `<span class="ub-actions"><button class="ub-btn ub-primary" onclick="App.updaterOpenGithub()">Apri GitHub</button></span>` +
       `<button class="ub-close" title="Chiudi" onclick="App.updaterDismiss()">${ic('x', 14)}</button>`;
     document.body.appendChild(bar);
+  }
+
+  async function updaterOpenGithub() {
+    try { await call('apri_github'); } catch (e) {}
   }
 
   function updaterDismiss() {
@@ -8180,7 +8180,7 @@ const App = (() => {
     salvaEmailCoda, showReleaseNotes, askSurveyEmailForClient,
     toast, showLoading, hideLoading,
     // Aggiornamenti GitHub
-    updaterDismiss, updaterApplySupporto, updaterDownloadApp,
+    updaterDismiss, updaterApplySupporto, updaterDownloadApp, updaterOpenGithub,
   };
 })();
 
