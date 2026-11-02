@@ -2273,11 +2273,12 @@ const App = (() => {
   }
 
   /* ── Checkbox group (gruppi omogenei) ───────────────────────────────── */
+  // Feedback Sara 2026-11-02: nella §4.2 (presenza lavoratori per gruppo
+  // omogeneo) lasciare SOLO Uomini/Donne da spuntare.
+  const CBG_COLS = [['Uomini', 'uomini'], ['Donne', 'donne']];
+
   function buildCheckboxGroup(id, preRows) {
-    const COLS = [
-      ['Uomini', 'uomini'], ['Donne', 'donne'], ['Minori', 'minori'],
-      ['Stranieri', 'stranieri'], ['Tip.Contr.', 'contratti'],
-    ];
+    const COLS = CBG_COLS;
     const headCols = COLS.map(([l]) =>
       `<span class="cbg-col">${escHtml(l)}</span>`).join('');
 
@@ -2297,10 +2298,7 @@ const App = (() => {
   }
 
   function buildCbgRow(id, values = {}, COLS) {
-    if (!COLS) COLS = [
-      ['Uomini','uomini'],['Donne','donne'],['Minori','minori'],
-      ['Stranieri','stranieri'],['Tip.Contr.','contratti'],
-    ];
+    if (!COLS) COLS = CBG_COLS;
     const nome = values.nome || '';
     const checks = COLS.map(([l, k]) => {
       const checked = (values[k] === 'SI' || values[k] === true) ? 'checked' : '';
@@ -2334,7 +2332,7 @@ const App = (() => {
   }
 
   function onCbgChange(id) {
-    const COLS = ['uomini','donne','minori','stranieri','contratti'];
+    const COLS = CBG_COLS.map(c => c[1]);   // ['uomini','donne']
     const body = document.getElementById(`cbg-body-${id}`);
     if (!body) return;
     state.formValues[id] = [...body.querySelectorAll('.cbg-row')].map(row => {
@@ -2820,11 +2818,13 @@ const App = (() => {
             >${escHtml(g.descrizione||'')}</textarea>
         </div>
         <div style="margin-bottom:10px">
-          <label class="field-label">Impianti presenti <span class="cap2-derived-tag">derivati automaticamente</span></label>
-          <textarea class="field-textarea cap2-readonly" rows="2" readonly
-            title="Derivati dalla sezione Impianti del JSON — modificali lì"
-            >${escHtml((g.impianti||[]).join('\n')) || '—'}</textarea>
-          <div class="cap2-derived-note">Riportati automaticamente dalla sezione <b>Impianti</b> (elettrico/termico/aeraulico) e collegati anche al Cap.4 — non si modificano qui.</div>
+          <label class="field-label">Impianti presenti <span class="cap2-derived-tag">precompilati — uno per riga</span></label>
+          <textarea class="field-textarea" rows="2"
+            placeholder="Un impianto per riga (es. Impianto elettrico)"
+            title="Precompilati dalla sezione Impianti del JSON: puoi aggiungerne o toglierne a mano"
+            oninput="App.onCap2FieldChange('${fieldId}',${gi},'impianti_text',this.value)"
+            >${escHtml((g.impianti||[]).join('\n'))}</textarea>
+          <div class="cap2-derived-note">Precompilati dalla sezione <b>Impianti</b> (elettrico/termico/aeraulico): puoi modificarli qui.</div>
         </div>
         <div style="margin-bottom:10px">
           <label class="field-label">Prodotti chimici <span class="cap2-derived-tag">precompilati — uno per riga</span></label>
@@ -3867,21 +3867,35 @@ const App = (() => {
     const ed = state.formValues[fieldId] || {};
     const sel = new Set(ed.schede_db || []);
     const q = _c14Norm(ed._catSearch || '');
-    const rows = cat.filter(c => !q || _c14Norm(c.nome).includes(q)).map(c => {
-      const on = sel.has(c.file);
-      return `<label class="cap14-cat-row${on ? ' on' : ''}">
+    // Si passa l'INDICE nel catalogo (non il nome file): così l'onchange non si
+    // rompe con nomi contenenti apici/virgolette (bug Sara 2026-11-02: le schede
+    // aggiunte a mano non venivano aggiunte perché JSON.stringify(file) inseriva
+    // doppi apici dentro l'attributo onchange="…" spezzandolo).
+    const rows = cat
+      .map((c, idx) => ({ c, idx }))
+      .filter(({ c }) => !q || _c14Norm(c.nome).includes(q))
+      .map(({ c, idx }) => {
+        const on = sel.has(c.file);
+        return `<label class="cap14-cat-row${on ? ' on' : ''}">
         <input type="checkbox" ${on ? 'checked' : ''}
-          onchange="App.onCap14SchedaToggle('${fieldId}', ${JSON.stringify(c.file)})">
+          onchange="App.onCap14SchedaToggle('${fieldId}', ${idx})">
         <span>${escHtml(c.nome)}</span></label>`;
-    }).join('');
+      }).join('');
     const nSel = sel.size;
     cont.innerHTML = `<div class="cap14-cat-count">${nSel} selezionate · ${cat.length} nel database</div>`
       + (rows || '<p class="cap14-note">Nessuna scheda corrisponde alla ricerca.</p>');
   }
 
-  function onCap14SchedaToggle(fieldId, file) {
+  function onCap14SchedaToggle(fieldId, idx) {
     const ed = state.formValues[fieldId];
     if (!ed) return;
+    // `idx` = indice nel catalogo (compatibile anche col vecchio nome file).
+    let file = idx;
+    if (typeof idx === 'number') {
+      const c = (state.chimicoCatalog || [])[idx];
+      if (!c) return;
+      file = c.file;
+    }
     if (!Array.isArray(ed.schede_db)) ed.schede_db = [];
     const i = ed.schede_db.indexOf(file);
     if (i >= 0) ed.schede_db.splice(i, 1); else ed.schede_db.push(file);
