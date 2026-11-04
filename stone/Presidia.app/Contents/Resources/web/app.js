@@ -916,9 +916,10 @@ const App = (() => {
       t.classList.toggle('cx-tab--active', t.dataset.sec === name);
     });
     state.clientSection = name;
-    // Il selettore Tipo DVR è esteso solo in Allegati (e sul menu iniziale),
-    // compatto altrove (es. Capitoli) ma sempre riapribile.
-    state.dvrTypeExpanded = (name === 'allegati' || name === 'menu');
+    // Il selettore Tipo DVR resta CONTRATTO ovunque (anche in Allegati e Piano):
+    // è l'utente a espanderlo se serve. Esteso solo sul menu iniziale (dove si
+    // sceglie il tipo). Feedback 2026-11-04.
+    state.dvrTypeExpanded = (name === 'menu');
     if (state.currentClient) _renderDvrTypeBar(state.currentClient);
     if (name === 'allegati') _renderAllegatiIndex();
     if (name === 'piano') _renderPianoSection();
@@ -929,32 +930,36 @@ const App = (() => {
     const jp = client?.json_path;
     if (!jp) { toast('Apri un cliente con un JSON per generare gli allegati', 'error'); return; }
     const tipo = _tipoDvrCliente(client);
-    const box = document.getElementById('alg-results');
+    // Super G / E: la segnaletica (Allegato 32) la compila il tecnico nella
+    // maschera a tutto schermo; alla chiusura si salva e si generano gli allegati.
+    if (tipo === 'super_g' || tipo === 'e') {
+      await _openAlg32Fullscreen();
+      return;
+    }
+    await _doGeneraAllegati(tipo);
+  }
+
+  async function _doGeneraAllegati(tipo) {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
     showLoading('Generazione allegati…');
-    // apri=false: NON apre la cartella (resta tutto dentro il software).
-    const res = await call('genera_allegati', jp, tipo, false);
+    const res = await call('genera_allegati', jp, tipo, true);  // apre la cartella
     hideLoading();
     if (!res || res.error) { toast(res?.error || 'Errore generazione allegati', 'error'); return; }
     state.allegatiFolder = res.cartella || '';
-    const _svgOpenFile = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
-    const righe = (res.generati || []).map(g => {
-      const n = (g.numero != null) ? `Allegato ${g.numero}` : g.file;
-      const comp = g.stato === 'compilato';
-      return `<div class="alg-row">
-        <span class="alg-dot${comp ? ' alg-dot--ok' : ''}"></span>
-        <span class="alg-name">${escHtml(n)}</span>
-        <span class="alg-state">${comp ? 'compilato' : 'copiato'}</span>
-        <button class="alg-open" title="Apri questo allegato"
-          onclick="App.apriAllegato('${encodeURIComponent(g.file)}')">${_svgOpenFile}</button>
-      </div>`;
-    }).join('');
     const nerr = (res.errori || []).length;
-    box.innerHTML = `
-      <div class="alg-summary">Generati <b>${res.n_totali}</b> allegati
-        (${res.n_compilati} compilati automaticamente)${nerr ? ` · <span class="alg-err">${nerr} errori</span>` : ''}
-        · usa <b>Apri cartella</b> in alto per vederli</div>
-      <div class="alg-list">${righe}</div>`;
-    toast('Allegati generati', 'success');
+    toast(`Allegati generati: ${res.n_totali} file (${res.n_compilati} compilati)`
+          + (nerr ? ` · ${nerr} errori` : ''), nerr ? 'error' : 'success', 4000);
+  }
+
+  async function esportaAllegatiPdf() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    showLoading('Esportazione PDF… (può richiedere qualche minuto)');
+    const res = await call('esporta_allegati_pdf', jp, true);
+    hideLoading();
+    if (!res || res.error) { toast(res?.error || 'Errore esportazione PDF', 'error'); return; }
+    toast(`Esportati ${res.n_pdf} PDF nella sottocartella "PDF"`, 'success', 4000);
   }
 
   // Indice allegati con includi/escludi (il tecnico corregge i SI/NO).
@@ -1024,17 +1029,14 @@ const App = (() => {
     if (res?.cartella) state.allegatiFolder = res.cartella;
   }
 
-  /* ── Allegato 32 — maschera segnaletica ───────────────────────────────── */
-  async function apriEditorAllegato32() {
-    const box = document.getElementById('alg32-editor');
-    if (!box) return;
-    // toggle: se già aperto, chiudi
-    if (box.style.display !== 'none' && box.dataset.open === '1') {
-      box.style.display = 'none'; box.dataset.open = '0'; return;
-    }
+  /* ── Allegato 32 — maschera segnaletica (a tutto schermo) ─────────────── */
+  async function _openAlg32Fullscreen() {
+    const ov = document.getElementById('alg32-fullscreen');
+    const box = document.getElementById('alg32-fs-body');
+    if (!ov || !box) return;
     const jp = state.currentClient?.json_path;
     if (!jp) { toast('Apri un cliente', 'error'); return; }
-    box.style.display = 'block'; box.dataset.open = '1';
+    ov.style.display = 'flex'; ov.dataset.open = '1';
     box.innerHTML = '<div class="alg32-loading">Caricamento cartelli…</div>';
     try {
       if (!state.alg32Catalog) {
@@ -1050,13 +1052,29 @@ const App = (() => {
     _renderAlg32();
   }
 
+  // Chiude la maschera: salva SEMPRE le scelte; se genera=true genera anche gli
+  // allegati (così il Word riflette la segnaletica). Richiamata anche tornando
+  // alla home (auto-salvataggio).
+  async function chiudiAlg32Fullscreen(genera) {
+    const ov = document.getElementById('alg32-fullscreen');
+    const jp = state.currentClient?.json_path;
+    if (jp) { try { await call('salva_allegato32', jp, state.alg32Scelte || {}); } catch (e) {} }
+    if (ov) { ov.style.display = 'none'; ov.dataset.open = '0'; }
+    if (genera) await _doGeneraAllegati(_tipoDvrCliente(state.currentClient));
+  }
+
+  function _alg32CatCount(cat) {
+    const sc = state.alg32Scelte || {};
+    return (cat.cartelli || []).filter(s => sc[s.id] && sc[s.id].necessario).length;
+  }
+
   function _alg32CatCount(cat) {
     const sc = state.alg32Scelte || {};
     return (cat.cartelli || []).filter(s => sc[s.id] && sc[s.id].necessario).length;
   }
 
   function _renderAlg32() {
-    const box = document.getElementById('alg32-editor');
+    const box = document.getElementById('alg32-fs-body');
     if (!box) return;
     const cats = state.alg32Catalog || [];
     const sc = state.alg32Scelte || {};
@@ -1098,7 +1116,7 @@ const App = (() => {
     e.necessario = !!checked;
     state.alg32Scelte[id] = e;
     // aggiorna solo il badge/riga senza re-render completo (mantiene focus)
-    const row = document.querySelector(`#alg32-editor input[onchange*="'${id}'"]`)?.closest('.alg32-row');
+    const row = document.querySelector(`#alg32-fs-body input[onchange*="'${id}'"]`)?.closest('.alg32-row');
     if (row) row.classList.toggle('on', !!checked);
     _refreshAlg32Badges();
     _saveAlg32();
@@ -1114,7 +1132,7 @@ const App = (() => {
 
   function _refreshAlg32Badges() {
     (state.alg32Catalog || []).forEach((c, i) => {
-      const det = document.querySelectorAll('#alg32-editor .alg32-cat')[i];
+      const det = document.querySelectorAll('#alg32-fs-body .alg32-cat')[i];
       if (!det) return;
       const n = _alg32CatCount(c);
       const badge = det.querySelector('.alg32-cat-badge');
@@ -7826,7 +7844,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Presidia · versione 1.2</div>
+        <div class="release-version">Presidia · versione 1.3</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
@@ -8282,7 +8300,7 @@ const App = (() => {
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
     onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
     apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
-    apriEditorAllegato32, onAlg32Toggle, onAlg32Pos,
+    esportaAllegatiPdf, chiudiAlg32Fullscreen, onAlg32Toggle, onAlg32Pos,
     onPianoTecnico, generaPiano,
     onToggleTemplateCap, onToggleCapitoloEscluso, toggleShowExcluded,
     startChapter, recompileChapter, openChapterForm,

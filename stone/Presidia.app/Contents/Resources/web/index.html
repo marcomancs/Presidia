@@ -322,9 +322,9 @@
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
                   Apri cartella
                 </button>
-                <button class="alg-btn" onclick="App.apriEditorAllegato32()">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
-                  Compila Allegato 32 (Segnaletica)
+                <button class="alg-btn" onclick="App.esportaAllegatiPdf()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h6M9 18h6"/></svg>
+                  Esporta tutti in PDF
                 </button>
                 <button class="alg-btn alg-btn--solid" onclick="App.generaAllegati()">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -332,9 +332,7 @@
                 </button>
               </div>
             </div>
-            <div id="alg32-editor" class="alg32-editor" style="display:none"></div>
             <div id="alg-index" class="alg-index"></div>
-            <div id="alg-results" class="alg-results"></div>
           </div>
 
           <!-- ── Pannello HACCP (bloccato) ────────────────────────────── -->
@@ -350,6 +348,18 @@
             <div id="piano-section"></div>
           </div>
         </div>
+    </div>
+
+    <!-- ── Maschera SEGNALETICA (Allegato 32) a tutto schermo ──────── -->
+    <div id="alg32-fullscreen" class="alg32-fs" style="display:none">
+      <div class="alg32-fs-bar">
+        <div class="alg32-fs-title">Allegato 32 — Segnaletica</div>
+        <div class="alg32-fs-actions">
+          <button class="alg-btn alg-btn--solid" onclick="App.chiudiAlg32Fullscreen(true)">Salva e genera allegati</button>
+          <button class="alg-btn" onclick="App.chiudiAlg32Fullscreen(false)">Chiudi</button>
+        </div>
+      </div>
+      <div id="alg32-fs-body" class="alg32-fs-body"></div>
     </div>
 
     <!-- ── CHAPTER FORM ──────────────────────────────────────────── -->
@@ -499,7 +509,7 @@
   </main>
   </div><!-- /app-body -->
 
-  <div id="version-badge">Presidia · V 1.2</div>
+  <div id="version-badge">Presidia · V 1.3</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
