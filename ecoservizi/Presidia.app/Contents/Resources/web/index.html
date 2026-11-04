@@ -239,7 +239,7 @@
                     onclick="App.setClientSection('allegati')">Allegati</button>
             <button class="cx-tab cx-tab--locked" data-sec="haccp"
                     onclick="App.setClientSection('haccp')">HACCP</button>
-            <button class="cx-tab cx-tab--locked" data-sec="piano"
+            <button class="cx-tab" data-sec="piano"
                     onclick="App.setClientSection('piano')">Piano di intervento</button>
           </div>
 
@@ -274,15 +274,12 @@
                 <span class="cxmenu-tt">HACCP</span>
                 <span class="cxmenu-sb">In sviluppo</span>
               </button>
-              <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('piano')">
-                <span class="cxmenu-lock">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                </span>
+              <button class="cxmenu-card" onclick="App.setClientSection('piano')">
                 <span class="cxmenu-ic">
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg>
                 </span>
                 <span class="cxmenu-tt">Piano di intervento</span>
-                <span class="cxmenu-sb">In sviluppo</span>
+                <span class="cxmenu-sb">Copia PDF e compila le checklist</span>
               </button>
             </div>
           </div>
@@ -325,12 +322,17 @@
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
                   Apri cartella
                 </button>
+                <button class="alg-btn" onclick="App.apriEditorAllegato32()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+                  Compila Allegato 32 (Segnaletica)
+                </button>
                 <button class="alg-btn alg-btn--solid" onclick="App.generaAllegati()">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   Genera allegati
                 </button>
               </div>
             </div>
+            <div id="alg32-editor" class="alg32-editor" style="display:none"></div>
             <div id="alg-index" class="alg-index"></div>
             <div id="alg-results" class="alg-results"></div>
           </div>
@@ -343,12 +345,9 @@
             </div>
           </div>
 
-          <!-- ── Pannello PIANO DI INTERVENTO (bloccato) ──────────────── -->
+          <!-- ── Pannello PIANO DI INTERVENTO ─────────────────────────── -->
           <div id="sec-piano" class="cx-pane" style="display:none">
-            <div class="cx-empty cx-empty--locked">
-              <div class="cx-empty-title">Piano di intervento</div>
-              <div class="cx-empty-sub">Sezione in sviluppo — non ancora disponibile.</div>
-            </div>
+            <div id="piano-section"></div>
           </div>
         </div>
     </div>

@@ -879,7 +879,16 @@ const App = (() => {
     }
     _renderDvrTypeBar(state.currentClient);
     const jp = state.currentClient.json_path;
-    if (jp) { try { await call('imposta_tipo_dvr', jp, tipo); } catch (e) {} }
+    if (jp) {
+      try {
+        const r = await call('imposta_tipo_dvr', jp, tipo);
+        // Se gli allegati erano già stati generati, vengono rigenerati per il
+        // nuovo tipo (es. super_g → compaiono 31/32/33).
+        if (r && r.allegati_rigenerati) {
+          toast('Allegati rigenerati per il nuovo tipo di DVR', 'success', 3500);
+        }
+      } catch (e) {}
+    }
     // Propaga: cambiando tipo cambia la struttura di capitoli e allegati.
     try {
       await renderChaptersList(state.currentClient);
@@ -912,6 +921,7 @@ const App = (() => {
     state.dvrTypeExpanded = (name === 'allegati' || name === 'menu');
     if (state.currentClient) _renderDvrTypeBar(state.currentClient);
     if (name === 'allegati') _renderAllegatiIndex();
+    if (name === 'piano') _renderPianoSection();
   }
 
   async function generaAllegati() {
@@ -1012,6 +1022,170 @@ const App = (() => {
     const res = await call('apri_cartella_allegati', jp);
     if (res?.error) { toast(res.error, 'error'); return; }
     if (res?.cartella) state.allegatiFolder = res.cartella;
+  }
+
+  /* ── Allegato 32 — maschera segnaletica ───────────────────────────────── */
+  async function apriEditorAllegato32() {
+    const box = document.getElementById('alg32-editor');
+    if (!box) return;
+    // toggle: se già aperto, chiudi
+    if (box.style.display !== 'none' && box.dataset.open === '1') {
+      box.style.display = 'none'; box.dataset.open = '0'; return;
+    }
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    box.style.display = 'block'; box.dataset.open = '1';
+    box.innerHTML = '<div class="alg32-loading">Caricamento cartelli…</div>';
+    try {
+      if (!state.alg32Catalog) {
+        const c = await call('get_allegato32_catalog');
+        state.alg32Catalog = (c && c.ok) ? (c.categorie || []) : [];
+        if (!c || !c.ok) { box.innerHTML = `<div class="alg32-loading">${escHtml(c?.error||'Catalogo non disponibile')}</div>`; return; }
+      }
+      const s = await call('get_allegato32_scelte', jp);
+      state.alg32Scelte = (s && s.scelte) ? s.scelte : {};
+    } catch (e) {
+      box.innerHTML = '<div class="alg32-loading">Errore nel caricamento.</div>'; return;
+    }
+    _renderAlg32();
+  }
+
+  function _alg32CatCount(cat) {
+    const sc = state.alg32Scelte || {};
+    return (cat.cartelli || []).filter(s => sc[s.id] && sc[s.id].necessario).length;
+  }
+
+  function _renderAlg32() {
+    const box = document.getElementById('alg32-editor');
+    if (!box) return;
+    const cats = state.alg32Catalog || [];
+    const sc = state.alg32Scelte || {};
+    const cat = cats.map(c => {
+      const n = _alg32CatCount(c);
+      const rows = (c.cartelli || []).map(s => {
+        const cur = sc[s.id] || {};
+        const on = !!cur.necessario;
+        const pos = cur.posizione || '';
+        const label = s.testo || s.descr || '';
+        const thumb = s.img
+          ? `<img class="alg32-thumb" src="${s.img}" alt="">`
+          : `<span class="alg32-thumb alg32-thumb--none">—</span>`;
+        return `<div class="alg32-row${on ? ' on' : ''}">
+          ${thumb}
+          <label class="alg32-nec"><input type="checkbox" ${on ? 'checked' : ''}
+            onchange="App.onAlg32Toggle('${s.id}', this.checked)"> Necessario</label>
+          ${label ? `<span class="alg32-lbl">${escHtml(label)}</span>` : '<span class="alg32-lbl alg32-lbl--muted">cartello</span>'}
+          <input class="alg32-pos" type="text" placeholder="Posizione consigliata…"
+            value="${escAttr(pos)}" oninput="App.onAlg32Pos('${s.id}', this.value)">
+        </div>`;
+      }).join('');
+      return `<details class="alg32-cat"${n ? ' open' : ''}>
+        <summary><span class="alg32-cat-name">${escHtml(c.label)}</span>
+          <span class="alg32-cat-badge${n ? ' on' : ''}">${n ? n + ' necessari · SI' : 'NO'}</span></summary>
+        <div class="alg32-rows">${rows}</div>
+      </details>`;
+    }).join('');
+    box.innerHTML =
+      `<div class="alg32-head">
+         <b>Allegato 32 — Segnaletica</b>
+         <span class="alg32-hint">Spunta i cartelli necessari e indica la posizione. La categoria risulta "SI" se ha almeno un cartello. Verrà usato alla generazione degli allegati.</span>
+       </div>${cat}`;
+  }
+
+  function onAlg32Toggle(id, checked) {
+    if (!state.alg32Scelte) state.alg32Scelte = {};
+    const e = state.alg32Scelte[id] || {};
+    e.necessario = !!checked;
+    state.alg32Scelte[id] = e;
+    // aggiorna solo il badge/riga senza re-render completo (mantiene focus)
+    const row = document.querySelector(`#alg32-editor input[onchange*="'${id}'"]`)?.closest('.alg32-row');
+    if (row) row.classList.toggle('on', !!checked);
+    _refreshAlg32Badges();
+    _saveAlg32();
+  }
+
+  function onAlg32Pos(id, value) {
+    if (!state.alg32Scelte) state.alg32Scelte = {};
+    const e = state.alg32Scelte[id] || {};
+    e.posizione = value;
+    state.alg32Scelte[id] = e;
+    _saveAlg32();
+  }
+
+  function _refreshAlg32Badges() {
+    (state.alg32Catalog || []).forEach((c, i) => {
+      const det = document.querySelectorAll('#alg32-editor .alg32-cat')[i];
+      if (!det) return;
+      const n = _alg32CatCount(c);
+      const badge = det.querySelector('.alg32-cat-badge');
+      if (badge) { badge.textContent = n ? n + ' necessari · SI' : 'NO'; badge.classList.toggle('on', !!n); }
+    });
+  }
+
+  let _alg32SaveT = null;
+  function _saveAlg32() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_alg32SaveT);
+    _alg32SaveT = setTimeout(() => {
+      call('salva_allegato32', jp, state.alg32Scelte || {}).catch(() => {});
+    }, 500);
+  }
+
+  /* ── Piano di intervento ───────────────────────────────────────────────── */
+  async function _renderPianoSection() {
+    const box = document.getElementById('piano-section');
+    if (!box) return;
+    const jp = state.currentClient?.json_path;
+    if (!jp) { box.innerHTML = '<div class="piano-head">Apri un cliente con un JSON.</div>'; return; }
+    let tec = {};
+    try { const r = await call('get_piano_tecnico', jp); tec = (r && r.tecnico) || {}; } catch (e) {}
+    state.pianoTecnico = tec;
+    box.innerHTML =
+      `<div class="piano-panel" style="display:block">
+        <div class="piano-head"><b>Piano di intervento</b>
+         <span class="piano-hint">Copia i PDF e compila le checklist: 01_A (ragione sociale + tecnico), DPI (come Allegato 31), Segnaletica (come Allegato 32, usa la maschera negli Allegati), Antincendio (come Allegato 33). Le tabelle "Disponibilità" dei registri non vengono toccate.</span></div>
+       <div class="piano-tec">
+         <input class="piano-in" type="text" placeholder="Tecnico dedicato (Nome Cognome)" value="${escAttr(tec.nome||'')}" oninput="App.onPianoTecnico('nome', this.value)">
+         <input class="piano-in" type="text" placeholder="Telefono" value="${escAttr(tec.telefono||'')}" oninput="App.onPianoTecnico('telefono', this.value)">
+         <input class="piano-in" type="text" placeholder="Email" value="${escAttr(tec.email||'')}" oninput="App.onPianoTecnico('email', this.value)">
+       </div>
+       <div class="piano-actions">
+         <button class="alg-btn alg-btn--solid" onclick="App.generaPiano()">Genera cartella Piano di intervento</button>
+       </div>
+       <div id="piano-results" class="alg-results"></div>
+      </div>`;
+  }
+
+  let _pianoSaveT = null;
+  function onPianoTecnico(field, value) {
+    if (!state.pianoTecnico) state.pianoTecnico = {};
+    state.pianoTecnico[field] = value;
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_pianoSaveT);
+    _pianoSaveT = setTimeout(() => {
+      call('salva_piano_tecnico', jp, state.pianoTecnico || {}).catch(() => {});
+    }, 500);
+  }
+
+  async function generaPiano() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    // salva subito il tecnico, poi genera
+    try { await call('salva_piano_tecnico', jp, state.pianoTecnico || {}); } catch (e) {}
+    showLoading('Generazione Piano di intervento…');
+    const res = await call('genera_piano_intervento', jp, true);
+    hideLoading();
+    const box = document.getElementById('piano-results');
+    if (!res || res.error) { toast(res?.error || 'Errore generazione Piano', 'error'); return; }
+    toast(`Piano generato (${res.n_compilati} compilati, ${res.n_totali} file)`, 'success', 4000);
+    if (box) {
+      box.innerHTML = (res.generati || []).map(g =>
+        `<div class="alg-row"><span class="alg-dot${g.stato==='compilato'?' alg-dot--ok':''}"></span>
+         <span class="alg-name">${escHtml(g.file)}</span>
+         <span class="alg-state">${g.stato}</span></div>`).join('');
+    }
   }
 
   // 3 passi IN LINEA nella testata navy della pagina cliente.
@@ -8108,6 +8282,8 @@ const App = (() => {
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
     onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
     apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
+    apriEditorAllegato32, onAlg32Toggle, onAlg32Pos,
+    onPianoTecnico, generaPiano,
     onToggleTemplateCap, onToggleCapitoloEscluso, toggleShowExcluded,
     startChapter, recompileChapter, openChapterForm,
     goBackFromForm, toggleAutoSection,
