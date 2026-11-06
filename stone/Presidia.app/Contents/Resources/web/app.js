@@ -903,7 +903,7 @@ const App = (() => {
   function setClientSection(name) {
     const panes = {
       menu: 'sec-menu', capitoli: 'sec-capitoli', allegati: 'sec-allegati',
-      haccp: 'sec-haccp', piano: 'sec-piano',
+      haccp: 'sec-haccp', piano: 'sec-piano', lettera: 'sec-lettera',
     };
     Object.entries(panes).forEach(([sec, id]) => {
       const el = document.getElementById(id);
@@ -923,6 +923,7 @@ const App = (() => {
     if (state.currentClient) _renderDvrTypeBar(state.currentClient);
     if (name === 'allegati') _renderAllegatiIndex();
     if (name === 'piano') _renderPianoSection();
+    if (name === 'lettera') _renderLetteraSection();
   }
 
   async function generaAllegati() {
@@ -1204,6 +1205,172 @@ const App = (() => {
          <span class="alg-name">${escHtml(g.file)}</span>
          <span class="alg-state">${g.stato}</span></div>`).join('');
     }
+  }
+
+  /* ── Lettera di consegna ───────────────────────────────────────────────── */
+  async function _renderLetteraSection() {
+    const jp = state.currentClient?.json_path;
+    const body = document.getElementById('lettera-body');
+    const bar = document.getElementById('lettera-toolbar');
+    if (!body) return;
+    if (!jp) { body.innerHTML = '<div class="piano-head">Apri un cliente con un JSON.</div>'; if (bar) bar.innerHTML = ''; return; }
+    body.innerHTML = '<div class="piano-head">Analisi del modello in corso…</div>';
+    const res = await call('analizza_lettera_consegna', jp);
+    if (!res || res.error) {
+      body.innerHTML = `<div class="lett-empty">${escHtml(res?.error || 'Errore analisi lettera')}
+        <div class="lett-empty-sub">Verifica che il modello sia in <b>Supporto Presidia / 02_Supporto / 02_Template / Lettera di consegna</b>.</div></div>`;
+      if (bar) bar.innerHTML = '';
+      return;
+    }
+    const riq = res.riquadri || [];
+    // stato locale (scelte + campi) ricostruito dal backend
+    state.letteraScelte = {};
+    state.letteraCampi = {};
+    riq.forEach(b => {
+      state.letteraScelte[b.id] = !!b.selezionato;
+      (b.campi_verdi || []).forEach(c => {
+        if (c.valore) {
+          if (!state.letteraCampi[b.id]) state.letteraCampi[b.id] = {};
+          state.letteraCampi[b.id][c.key] = c.valore;
+        }
+      });
+    });
+    state.letteraRiquadri = riq;
+
+    // raggruppa per 'gruppo' mantenendo l'ordine del documento
+    const gruppi = [];
+    const idx = new Map();
+    riq.forEach(b => {
+      const g = b.gruppo || 'Altre prescrizioni';
+      if (!idx.has(g)) { idx.set(g, gruppi.length); gruppi.push({ nome: g, items: [] }); }
+      gruppi[idx.get(g)].items.push(b);
+    });
+
+    body.innerHTML = gruppi.map(g => `
+      <div class="lett-group">
+        <div class="lett-group-h">${escHtml(g.nome)}</div>
+        ${g.items.map(_letteraCardHtml).join('')}
+      </div>`).join('');
+    _renderLetteraBar();
+  }
+
+  function _letteraCardHtml(b) {
+    const on = !!state.letteraScelte[b.id];
+    const badge = b.auto === true
+      ? '<span class="lett-badge on">pre-selezionato</span>'
+      : (b.auto === false ? '<span class="lett-badge off">non rilevato</span>'
+                          : '<span class="lett-badge opt">scelta tecnico</span>');
+    const campi = (b.campi_verdi || []).map(c => `
+      <label class="lett-field">
+        <span class="lett-field-l">${escHtml(c.label)}</span>
+        <input type="text" class="lett-in" placeholder="${escAttr(c.label)}"
+          value="${escAttr((state.letteraCampi[b.id] || {})[c.key] || '')}"
+          oninput="App.onLetteraCampo('${b.id}', ${JSON.stringify(c.key).replace(/"/g, '&quot;')}, this.value)">
+      </label>`).join('');
+    const sommario = b.riassunto || b.prescrizione || b.nome || b.id;
+    const full = escHtml(b.testo || b.prescrizione || '').replace(/\n/g, '<br>');
+    const hasDetail = !!(b.testo || b.condizione || campi);
+    return `
+      <div class="lett-card${on ? ' on' : ''}" data-box="${b.id}">
+        <div class="lett-row">
+          <input type="checkbox" class="lett-chk" ${on ? 'checked' : ''}
+            onchange="App.onLetteraToggle('${b.id}', this.checked)">
+          <span class="lett-sum" onclick="App.letteraExpand('${b.id}')" title="Espandi/comprimi">${escHtml(sommario)}</span>
+          ${badge}
+          ${hasDetail ? `<button class="lett-exp" title="Espandi" onclick="App.letteraExpand('${b.id}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>` : ''}
+        </div>
+        ${hasDetail ? `<div class="lett-detail" id="lettd-${b.id}" style="display:none">
+          ${b.testo ? `<div class="lett-full">${full}</div>` : ''}
+          ${b.condizione ? `<div class="lett-cond"><b>Si stampa se:</b> ${escHtml(b.condizione)}</div>` : ''}
+          ${campi ? `<div class="lett-fields">${campi}</div>` : ''}
+        </div>` : ''}
+      </div>`;
+  }
+
+  function letteraExpand(boxId) {
+    const d = document.getElementById('lettd-' + boxId);
+    if (!d) return;
+    const open = d.style.display === 'none';
+    d.style.display = open ? '' : 'none';
+    const card = document.querySelector(`.lett-card[data-box="${boxId}"]`);
+    if (card) card.classList.toggle('open', open);
+  }
+
+  function letteraExpandAll(open) {
+    (state.letteraRiquadri || []).forEach(b => {
+      const d = document.getElementById('lettd-' + b.id);
+      if (d) d.style.display = open ? '' : 'none';
+      const card = document.querySelector(`.lett-card[data-box="${b.id}"]`);
+      if (card) card.classList.toggle('open', open);
+    });
+  }
+
+  function _renderLetteraBar() {
+    const bar = document.getElementById('lettera-toolbar');
+    if (!bar) return;
+    const riq = state.letteraRiquadri || [];
+    const n = riq.filter(b => state.letteraScelte[b.id]).length;
+    bar.innerHTML = `
+      <span class="lett-count"><b>${n}</b> / ${riq.length} riquadri inclusi</span>
+      <span class="chfilter-spacer"></span>
+      <button class="chfilter" onclick="App.letteraExpandAll(true)">Espandi tutti</button>
+      <button class="chfilter" onclick="App.letteraExpandAll(false)">Comprimi tutti</button>
+      <button class="chfilter" onclick="App.letteraAuto()">Ripristina automatici</button>`;
+  }
+
+  function onLetteraToggle(boxId, checked) {
+    state.letteraScelte[boxId] = !!checked;
+    const card = document.querySelector(`.lett-card[data-box="${boxId}"]`);
+    if (card) card.classList.toggle('on', !!checked);
+    _renderLetteraBar();
+    _saveLettera();
+  }
+
+  function onLetteraCampo(boxId, key, value) {
+    if (!state.letteraCampi[boxId]) state.letteraCampi[boxId] = {};
+    state.letteraCampi[boxId][key] = value;
+    _saveLettera();
+  }
+
+  async function letteraAuto() {
+    // azzera le scelte salvate → la pre-selezione torna automatica
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    state.letteraScelte = {};
+    await call('salva_lettera_scelte', jp, {}, state.letteraCampi || {});
+    _renderLetteraSection();
+  }
+
+  let _letteraSaveT = null;
+  function _saveLettera() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_letteraSaveT);
+    _letteraSaveT = setTimeout(() => {
+      call('salva_lettera_scelte', jp, state.letteraScelte || {}, state.letteraCampi || {}).catch(() => {});
+    }, 500);
+  }
+
+  async function generaLettera() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    // salva subito scelte+campi, poi genera
+    try { await call('salva_lettera_scelte', jp, state.letteraScelte || {}, state.letteraCampi || {}); } catch (e) {}
+    showLoading('Generazione Lettera di consegna…');
+    const res = await call('genera_lettera_consegna', jp, true);
+    hideLoading();
+    if (!res || res.error) { toast(res?.error || 'Errore generazione lettera', 'error'); return; }
+    state.letteraFolder = res.cartella || '';
+    toast(`Lettera generata (${res.n_inclusi} riquadri inclusi)`, 'success', 4000);
+  }
+
+  async function apriCartellaLettera() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Apri un cliente', 'error'); return; }
+    const res = await call('apri_cartella_lettera', jp);
+    if (res && res.error) toast(res.error, 'info');
   }
 
   // 3 passi IN LINEA nella testata navy della pagina cliente.
@@ -7844,7 +8011,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Presidia · versione 1.3</div>
+        <div class="release-version">Presidia · versione 1.4</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
@@ -8302,6 +8469,8 @@ const App = (() => {
     apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
     esportaAllegatiPdf, chiudiAlg32Fullscreen, onAlg32Toggle, onAlg32Pos,
     onPianoTecnico, generaPiano,
+    generaLettera, apriCartellaLettera, onLetteraToggle, onLetteraCampo, letteraAuto,
+    letteraExpand, letteraExpandAll,
     onToggleTemplateCap, onToggleCapitoloEscluso, toggleShowExcluded,
     startChapter, recompileChapter, openChapterForm,
     goBackFromForm, toggleAutoSection,

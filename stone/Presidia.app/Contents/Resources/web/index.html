@@ -241,6 +241,8 @@
                     onclick="App.setClientSection('haccp')">HACCP</button>
             <button class="cx-tab" data-sec="piano"
                     onclick="App.setClientSection('piano')">Piano di intervento</button>
+            <button class="cx-tab" data-sec="lettera"
+                    onclick="App.setClientSection('lettera')">Lettera di consegna</button>
           </div>
 
           <!-- ── MENU INTERMEDIO (landing dopo l'import) ──────────────── -->
@@ -280,6 +282,13 @@
                 </span>
                 <span class="cxmenu-tt">Piano di intervento</span>
                 <span class="cxmenu-sb">Copia PDF e compila le checklist</span>
+              </button>
+              <button class="cxmenu-card" onclick="App.setClientSection('lettera')">
+                <span class="cxmenu-ic">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </span>
+                <span class="cxmenu-tt">Lettera di consegna</span>
+                <span class="cxmenu-sb">Prescrizioni dal sopralluogo</span>
               </button>
             </div>
           </div>
@@ -346,6 +355,29 @@
           <!-- ── Pannello PIANO DI INTERVENTO ─────────────────────────── -->
           <div id="sec-piano" class="cx-pane" style="display:none">
             <div id="piano-section"></div>
+          </div>
+
+          <!-- ── Pannello LETTERA DI CONSEGNA ─────────────────────────── -->
+          <div id="sec-lettera" class="cx-pane" style="display:none">
+            <div class="alg-head">
+              <div>
+                <div class="alg-title">Lettera di consegna</div>
+                <div class="alg-sub">Prescrizioni pre-selezionate dal sopralluogo (verbale + dati JSON).
+                  Includi/escludi i riquadri e compila i campi mancanti; rossi e gialli restano come nel modello.</div>
+              </div>
+              <div class="alg-head-actions">
+                <button class="alg-btn" onclick="App.apriCartellaLettera()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                  Apri cartella
+                </button>
+                <button class="alg-btn alg-btn--solid" onclick="App.generaLettera()">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Genera lettera
+                </button>
+              </div>
+            </div>
+            <div id="lettera-toolbar" class="lett-toolbar"></div>
+            <div id="lettera-body" class="lett-body"></div>
           </div>
         </div>
     </div>
@@ -509,7 +541,7 @@
   </main>
   </div><!-- /app-body -->
 
-  <div id="version-badge">Presidia · V 1.3</div>
+  <div id="version-badge">Presidia · V 1.4</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
