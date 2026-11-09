@@ -3805,3 +3805,37 @@ html[data-theme="dark"] .theme-icon-moon { display: block; }
 .lett-empty { padding: 28px 16px; text-align: center; color: var(--gray-600);
   font-size: 13.5px; font-weight: 600; }
 .lett-empty-sub { margin-top: 6px; font-size: 12px; font-weight: 400; color: var(--gray-500); }
+
+/* ── Cap2: editor a righe (una voce per riga) ─────────────────────────────── */
+.cap2-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.cap2-list-row { display: flex; align-items: center; gap: 6px; }
+.cap2-list-in { flex: 1; }
+.cap2-list-del { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border: 1px solid var(--gray-300); background: var(--surface);
+  color: var(--gray-500); border-radius: var(--radius-sm); cursor: pointer; transition: all .12s; }
+.cap2-list-del:hover { border-color: #c0392b; color: #c0392b; background: #fdecea; }
+.cap2-list-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 2px; padding: 5px 10px; font-size: 12px; font-weight: 600;
+  border: 1px dashed var(--gray-300); background: transparent; color: var(--blue-800);
+  border-radius: var(--radius-sm); cursor: pointer; transition: all .12s; }
+.cap2-list-add:hover { border-color: var(--blue-800); background: var(--gray-50); }
+
+/* ── Banner "anteprima obsoleta" (modifica maschera dopo anteprima) ───────── */
+.preview-stale-banner { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: 5000; display: flex; align-items: center; gap: 10px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 11px 14px; background: #fff4e5; border: 1px solid #f0c27b;
+  border-radius: var(--radius-md); box-shadow: 0 6px 24px rgba(0,0,0,.14);
+  color: #7a4f00; font-size: 13px; }
+:root[data-theme="dark"] .preview-stale-banner,
+:root:not([data-theme="light"]) .preview-stale-banner { }
+.preview-stale-banner .psb-ico { display: inline-flex; color: #b26a00; flex: 0 0 auto; }
+.preview-stale-banner .psb-txt { flex: 1; line-height: 1.4; }
+.preview-stale-banner .psb-btn { flex: 0 0 auto; padding: 6px 12px; font-size: 12.5px;
+  font-weight: 700; border: none; border-radius: var(--radius-sm);
+  background: var(--blue-800); color: #fff; cursor: pointer; }
+.preview-stale-banner .psb-btn:hover { filter: brightness(1.1); }
+.preview-stale-banner .psb-close { flex: 0 0 auto; display: inline-flex; align-items: center;
+  justify-content: center; width: 26px; height: 26px; border: none; background: transparent;
+  color: #b26a00; cursor: pointer; border-radius: var(--radius-sm); }
+.preview-stale-banner .psb-close:hover { background: rgba(0,0,0,.06); }

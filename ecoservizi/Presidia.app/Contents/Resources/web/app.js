@@ -1765,6 +1765,7 @@ const App = (() => {
 
   async function startChapter(chapterId, savedFormData = null, direction = 'forward', forceEdit = false) {
     state.freshImport = false;
+    _resetPreviewState();
     if (!state.currentClient?.json_path) {
       toast('Carica prima un file JSON per questo cliente', 'error'); return;
     }
@@ -1943,6 +1944,7 @@ const App = (() => {
   }
 
   async function goBackFromForm(skipSave = false) {
+    _resetPreviewState();
     if (!skipSave) await saveChapterDraft();
     if (state.fromClientView && state.currentClient?.id) {
       showClient(state.currentClient.id);
@@ -1964,6 +1966,7 @@ const App = (() => {
       '',          // output_path vuoto = bozza (non ancora esportato)
       allData
     );
+    _maybeStalePreview();
   }
 
   async function _animateFormScroll(exitCls, enterCls, fn) {
@@ -2105,6 +2108,9 @@ const App = (() => {
           }
           state.formValues[fd.id] = val;
         }
+
+      } else if (fd.type === 'turno_semplice') {
+        if (val) state.formValues[fd.id] = val;
 
       } else if (fd.type === 'checkbox') {
         const el = document.getElementById(`field-${fd.id}`);
@@ -2388,6 +2394,31 @@ const App = (() => {
           <span class="turno-sep">–</span>
           <input type="time" class="field-input turno-fine" style="width:100px"
                  onchange="App.onTurnoChange('${fd.id}')">
+        </div>`;
+
+    } else if (fd.type === 'turno_semplice') {
+      wrap.style.gridColumn = '1 / -1';
+      const cur = String(prefill[fd.id] || '');
+      let tipo = '', dataIso = '';
+      const mt = cur.match(/^(Diurno e notturno|Diurno|Notturno)/i);
+      if (mt) tipo = mt[1].charAt(0).toUpperCase() + mt[1].slice(1).toLowerCase();
+      const mIso = cur.match(/(\d{4}-\d{2}-\d{2})/);
+      const mIt = cur.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (mIso) dataIso = mIso[1];
+      else if (mIt) dataIso = `${mIt[3]}-${mIt[2]}-${mIt[1]}`;
+      wrap.dataset.turnoField = fd.id;
+      const opt = (v, lbl) => `<option value="${v}" ${tipo === v ? 'selected' : ''}>${lbl}</option>`;
+      wrap.innerHTML = `
+        <label class="field-label">${escHtml(fd.label)}</label>
+        <div class="turno-picker">
+          <select class="field-select turni-tipo" style="width:190px"
+                  onchange="App.onTurniSemplice('${fd.id}')">
+            <option value="">Tipo turno…</option>
+            ${opt('Diurno', 'Diurno')}${opt('Notturno', 'Notturno')}${opt('Diurno e notturno', 'Diurno e notturno')}
+          </select>
+          <span class="turno-sep">data (opz.)</span>
+          <input type="date" class="field-input turni-data" style="width:150px"
+                 value="${dataIso}" onchange="App.onTurniSemplice('${fd.id}')">
         </div>`;
 
     } else if (fd.type === 'table') {
@@ -2743,13 +2774,14 @@ const App = (() => {
     state.formValues[id] = value;
     const wrap = document.querySelector(`[data-field-id="${id}"]`);
     if (wrap) wrap.classList.remove('has-error');
-    if (['num_uomini','num_donne','num_minorenni','indice_infortunistico','attivita_agricola'].includes(id)) {
+    if (['num_lavoratori','num_uomini','num_donne','num_minorenni','indice_infortunistico','attivita_agricola'].includes(id)) {
       updateGruppo();
     }
     if (id === 'ruolo_datore' || id === 'datore_lavoro') {
       aggiornaNotizioneAmministratore();
     }
     updateProgressPills();
+    _maybeStalePreview();
   }
 
   /* ── Turno picker ──────────────────────────────────────────────────── */
@@ -2761,6 +2793,21 @@ const App = (() => {
     const f = wrap.querySelector('.turno-fine')?.value || '';
     state.formValues[fieldId] = (g && i && f) ? `${g} ${i}–${f}` : '';
     saveChapterDraft();
+  }
+
+  // Turni semplificati: Tipo (Diurno/Notturno/Diurno e notturno) + data opzionale.
+  function onTurniSemplice(fieldId) {
+    const wrap = document.querySelector(`[data-turno-field="${fieldId}"]`);
+    if (!wrap) return;
+    const tipo = wrap.querySelector('.turni-tipo')?.value || '';
+    const dataIso = wrap.querySelector('.turni-data')?.value || '';
+    let val = tipo;
+    if (tipo && dataIso) {
+      const p = dataIso.split('-');
+      const it = (p.length === 3) ? `${p[2]}/${p[1]}/${p[0]}` : dataIso;
+      val = `${tipo} · dal ${it}`;
+    }
+    onFieldInput(fieldId, val);
   }
 
   /* ── Button-grid option select (sostituisce <select>) ───────────────── */
@@ -2956,10 +3003,13 @@ const App = (() => {
 
   /* ── Gruppo pronto soccorso (calcolo lato client) ───────────────────── */
   function updateGruppo() {
+    // Totale lavoratori: il campo unico `num_lavoratori` (dal JSON) è la fonte;
+    // fallback alla vecchia somma uomini+donne+minorenni per i JSON vecchi.
+    const totField = parseInt(state.formValues['num_lavoratori'] || state.autoFields['num_lavoratori'] || 0) || 0;
     const u = parseInt(state.formValues['num_uomini'] || state.autoFields['num_uomini'] || 0) || 0;
     const d = parseInt(state.formValues['num_donne']  || state.autoFields['num_donne']  || 0) || 0;
     const m = parseInt(state.formValues['num_minorenni'] || state.autoFields['num_minorenni'] || 0) || 0;
-    const tot = u + d + m;
+    const tot = totField > 0 ? totField : (u + d + m);
     const idx = parseFloat(
       String(state.formValues['indice_infortunistico'] ||
              state.autoFields['indice_infortunistico'] || '0').replace(',', '.')) || 0;
@@ -3165,10 +3215,8 @@ const App = (() => {
               oninput="App.onCap2FieldChange('${fieldId}',${gi},'nome',this.value)">
           </div>
           <div>
-            <label class="field-label">Attrezzature (una per riga)</label>
-            <textarea class="field-textarea" rows="3"
-              oninput="App.onCap2FieldChange('${fieldId}',${gi},'attrezzature_text',this.value)"
-              >${escHtml((g.attrezzature||[]).join('\n'))}</textarea>
+            <label class="field-label">Attrezzature</label>
+            ${buildCap2List(fieldId, gi, 'attrezzature_text', g.attrezzature || [], 'es. Trapano')}
           </div>
         </div>
         <div style="margin-bottom:10px">
@@ -3178,35 +3226,23 @@ const App = (() => {
             >${escHtml(g.descrizione||'')}</textarea>
         </div>
         <div style="margin-bottom:10px">
-          <label class="field-label">Impianti presenti <span class="cap2-derived-tag">precompilati — uno per riga</span></label>
-          <textarea class="field-textarea" rows="2"
-            placeholder="Un impianto per riga (es. Impianto elettrico)"
-            title="Precompilati dalla sezione Impianti del JSON: puoi aggiungerne o toglierne a mano"
-            oninput="App.onCap2FieldChange('${fieldId}',${gi},'impianti_text',this.value)"
-            >${escHtml((g.impianti||[]).join('\n'))}</textarea>
+          <label class="field-label">Impianti presenti <span class="cap2-derived-tag">precompilati</span></label>
+          ${buildCap2List(fieldId, gi, 'impianti_text', g.impianti || [], 'es. Impianto elettrico')}
           <div class="cap2-derived-note">Precompilati dalla sezione <b>Impianti</b> (elettrico/termico/aeraulico): puoi modificarli qui.</div>
         </div>
         <div style="margin-bottom:10px">
-          <label class="field-label">Prodotti chimici <span class="cap2-derived-tag">precompilati — uno per riga</span></label>
-          <textarea class="field-textarea" rows="3"
-            placeholder="Un prodotto per riga"
-            title="Precompilati dal Cap.14 (agenti chimici): puoi aggiungerne o modificarne a mano"
-            oninput="App.onCap2FieldChange('${fieldId}',${gi},'chimici_text',this.value)"
-            >${escHtml((g.prodotti_chimici||[]).join('\n'))}</textarea>
-          <div class="cap2-derived-note">Vengono riportati automaticamente gli stessi agenti chimici del <b>Cap.14</b>; puoi comunque <b>aggiungerne altri a mano</b> (uno per riga). Le aggiunte manuali vengono mantenute.</div>
+          <label class="field-label">Prodotti chimici <span class="cap2-derived-tag">precompilati</span></label>
+          ${buildCap2List(fieldId, gi, 'chimici_text', g.prodotti_chimici || [], 'es. Detergente')}
+          <div class="cap2-derived-note">Vengono riportati automaticamente gli stessi agenti chimici del <b>Cap.14</b>; puoi comunque <b>aggiungerne altri a mano</b>. Le aggiunte manuali vengono mantenute.</div>
         </div>
         <div class="cap2-row-2col" style="margin-bottom:10px">
           <div>
-            <label class="field-label">Agenti cancerogeni (uno per riga — lascia vuoto se non presenti)</label>
-            <textarea class="field-textarea" rows="2"
-              oninput="App.onCap2FieldChange('${fieldId}',${gi},'agenti_cancerogeni_text',this.value)"
-              >${escHtml((g.agenti_cancerogeni||[]).join('\n'))}</textarea>
+            <label class="field-label">Agenti cancerogeni <span class="cap2-derived-tag">lascia vuoto se non presenti</span></label>
+            ${buildCap2List(fieldId, gi, 'agenti_cancerogeni_text', g.agenti_cancerogeni || [], 'es. Polvere di legno duro')}
           </div>
           <div>
-            <label class="field-label">Agenti biologici (uno per riga — lascia vuoto se non presenti)</label>
-            <textarea class="field-textarea" rows="2"
-              oninput="App.onCap2FieldChange('${fieldId}',${gi},'agenti_biologici_text',this.value)"
-              >${escHtml((g.agenti_biologici||[]).join('\n'))}</textarea>
+            <label class="field-label">Agenti biologici <span class="cap2-derived-tag">lascia vuoto se non presenti</span></label>
+            ${buildCap2List(fieldId, gi, 'agenti_biologici_text', g.agenti_biologici || [], 'es. Legionella')}
           </div>
         </div>
 
@@ -3324,6 +3360,55 @@ const App = (() => {
     } else {
       g[key] = value;
     }
+  }
+
+  /* ── Cap2: editor a righe (una voce per riga) al posto delle textarea ───── */
+  function _cap2ListRow(fieldId, gi, textKey, val, ph) {
+    return `<div class="cap2-list-row">
+      <input class="field-input cap2-list-in" type="text" value="${escAttr(val || '')}"
+        placeholder="${escAttr(ph || '')}"
+        oninput="App.onCap2ListSync('${fieldId}',${gi},'${textKey}')">
+      <button type="button" class="cap2-list-del" title="Rimuovi"
+        onclick="App.onCap2ListRemove(this,'${fieldId}',${gi},'${textKey}')">${ic('x', 12)}</button>
+    </div>`;
+  }
+
+  function buildCap2List(fieldId, gi, textKey, items, ph) {
+    const cid = `cap2list-${gi}-${textKey}`;
+    const list = (items && items.length ? items : ['']);
+    const rows = list.map(v => _cap2ListRow(fieldId, gi, textKey, v, ph)).join('');
+    return `<div class="cap2-list" id="${cid}">
+      ${rows}
+      <button type="button" class="cap2-list-add"
+        onclick="App.onCap2ListAdd('${fieldId}',${gi},'${textKey}','${escAttr(ph || '')}')">
+        ${ic('plus', 11)} Aggiungi
+      </button>
+    </div>`;
+  }
+
+  function onCap2ListSync(fieldId, gi, textKey) {
+    const box = document.getElementById(`cap2list-${gi}-${textKey}`);
+    if (!box) return;
+    const vals = [...box.querySelectorAll('.cap2-list-in')]
+      .map(i => i.value.trim()).filter(Boolean);
+    onCap2FieldChange(fieldId, gi, textKey, vals.join('\n'));
+  }
+
+  function onCap2ListAdd(fieldId, gi, textKey, ph) {
+    const box = document.getElementById(`cap2list-${gi}-${textKey}`);
+    if (!box) return;
+    const addBtn = box.querySelector('.cap2-list-add');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = _cap2ListRow(fieldId, gi, textKey, '', ph);
+    box.insertBefore(tmp.firstElementChild, addBtn);
+    const ins = box.querySelectorAll('.cap2-list-in');
+    if (ins.length) ins[ins.length - 1].focus();
+  }
+
+  function onCap2ListRemove(btn, fieldId, gi, textKey) {
+    const row = btn.closest('.cap2-list-row');
+    if (row) row.remove();
+    onCap2ListSync(fieldId, gi, textKey);
   }
 
   function onCap2FaseDpiToggle(gid) {
@@ -7873,8 +7958,55 @@ const App = (() => {
     const res = await call('preview_chapter', state.currentChapter, allData,
                            state.currentClient?.json_path || '');
     hideLoading();
-    if (res?.error) toast(res.error, 'error');
-    else toast('Anteprima aperta in Word. Sommario e n° pagine verranno aggiornati automaticamente nell\'esportazione finale.', 'info', 5000);
+    if (res?.error) { toast(res.error, 'error'); return; }
+    // da ora, se l'utente modifica la maschera, l'anteprima aperta è obsoleta
+    state.previewOpenChapter = state.currentChapter;
+    _hidePreviewStaleBanner();
+    toast('Anteprima aperta in Word. Sommario e n° pagine verranno aggiornati automaticamente nell\'esportazione finale.', 'info', 5000);
+  }
+
+  /* ── Anteprima obsoleta dopo modifica maschera (feedback 2026-11-09) ──── */
+  function _resetPreviewState() {
+    state.previewOpenChapter = null;
+    _hidePreviewStaleBanner();
+  }
+
+  function _maybeStalePreview() {
+    if (state.previewOpenChapter && state.previewOpenChapter === state.currentChapter) {
+      _showPreviewStaleBanner();
+    }
+  }
+
+  function _showPreviewStaleBanner() {
+    if (document.getElementById('preview-stale-banner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'preview-stale-banner';
+    bar.className = 'preview-stale-banner';
+    bar.innerHTML =
+      `<span class="psb-ico">${ic('info', 16)}</span>` +
+      `<span class="psb-txt">Hai modificato i dati dopo l'anteprima: quella aperta è <b>obsoleta</b>.</span>` +
+      `<button class="psb-btn" onclick="App.aggiornaAnteprima()">Chiudi e riapri anteprima</button>` +
+      `<button class="psb-close" title="Ignora" onclick="App.dismissPreviewStale()">${ic('x', 14)}</button>`;
+    document.body.appendChild(bar);
+  }
+
+  function _hidePreviewStaleBanner() {
+    const b = document.getElementById('preview-stale-banner');
+    if (b) b.remove();
+  }
+
+  function dismissPreviewStale() { _hidePreviewStaleBanner(); }
+
+  async function aggiornaAnteprima() {
+    _hidePreviewStaleBanner();
+    const allData = buildFullData();
+    showLoading('Aggiorno l\'anteprima…');
+    const res = await call('aggiorna_anteprima', state.currentChapter, allData,
+                           state.currentClient?.json_path || '');
+    hideLoading();
+    if (res?.error) { toast(res.error, 'error'); return; }
+    state.previewOpenChapter = state.currentChapter;
+    toast('Anteprima aggiornata in Word.', 'success', 4000);
   }
 
   // Chiamata dal backend (watcher) quando l'anteprima viene salvata in Word.
@@ -8143,6 +8275,26 @@ const App = (() => {
       state._updateInfo = info;
       _renderUpdateBanner(info);
     } catch (e) { /* l'assenza di rete non deve disturbare l'avvio */ }
+  }
+
+  // Controllo MANUALE (clic sul badge versione): dà SEMPRE un riscontro visibile,
+  // così è facile verificare che il meccanismo funzioni (feedback Marco).
+  async function controllaAggiornamenti() {
+    showLoading('Controllo aggiornamenti…');
+    let info = null;
+    try { info = await call('updater_check'); } catch (e) {}
+    hideLoading();
+    if (!info || !info.ok) {
+      toast('Impossibile verificare gli aggiornamenti ora (connessione assente o GitHub non raggiungibile).', 'error', 5000);
+      return;
+    }
+    if (info.app_update) {
+      state._updateInfo = info;
+      _renderUpdateBanner(info);
+      toast(`È disponibile la versione ${info.app_version_remote || ''}.`, 'success', 5000);
+    } else {
+      toast(`Sei già alla versione più recente (${info.app_version_local || ''}).`, 'info', 4000);
+    }
   }
 
   // Banner SOLO informativo: avvisa che c'è una nuova versione su GitHub e
@@ -8479,7 +8631,8 @@ const App = (() => {
     onCbgChange, addCbgRow, removeCbgRow,
     onInailSearch, onInailFocus, onInailBlur,
     selectInailCode, clearInailCode,
-    previewChapter, onPreviewSaved, openFile, apriFogliCalcolo,
+    previewChapter, aggiornaAnteprima, dismissPreviewStale,
+    onPreviewSaved, openFile, apriFogliCalcolo,
     pickRootFolder, pickClientiFolder, saveConfig,
     deleteClient, applySavedFormData,
     onChapterFilter, continuaProssimo,
@@ -8488,6 +8641,7 @@ const App = (() => {
     editChapter, exportChapterFromHistory, previewChapterFromHistory,
     // Cap2 editor
     toggleCap2Group, onCap2FieldChange, onCap2SchedaChange,
+    onCap2ListSync, onCap2ListAdd, onCap2ListRemove,
     addCap2Fase, removeCap2Fase, onCap2FaseDpiToggle, filterDpi,
     // Cap3 editor
     toggleCap3Locale, onCap3FieldChange, onCap3RischioChange, onCap3PresenteToggle,
@@ -8497,7 +8651,7 @@ const App = (() => {
     // Cap5 editor
     onCap5Toggle,
     // Cap1 turno picker
-    onTurnoChange,
+    onTurnoChange, onTurniSemplice,
     // Cap8 editor
     onCap8Change,
     // Procedure picker
@@ -8544,6 +8698,7 @@ const App = (() => {
     toast, showLoading, hideLoading,
     // Aggiornamenti GitHub
     updaterDismiss, updaterApplySupporto, updaterDownloadApp, updaterOpenGithub,
+    controllaAggiornamenti,
   };
 })();
 
