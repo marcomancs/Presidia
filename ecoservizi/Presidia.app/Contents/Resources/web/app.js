@@ -8143,7 +8143,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Presidia · versione 1.4</div>
+        <div class="release-version">Presidia · versione 1.5</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
