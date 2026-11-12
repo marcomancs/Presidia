@@ -108,7 +108,108 @@ const App = (() => {
     if (st && msg != null) st.textContent = msg;
   }
 
+  // ── Scroll globale ──────────────────────────────────────────────────────
+  // La rotella scorre SEMPRE il contenitore principale della vista/modale
+  // attiva, anche quando il mouse è su header, bordi, spazio vuoto o sullo
+  // sfondo scurito di un modale (prima funzionava solo sopra l'esatto elemento
+  // scrollabile). Se il punto sotto il mouse è già uno scroller che può muoversi
+  // in quella direzione (es. un menu a tendina interno), lo lascia gestire
+  // nativamente. Feedback Marco 2026-11-12.
+  function _scrollerMuovibile(node, dy) {
+    let el = node;
+    while (el && el.nodeType === 1 && el !== document.body) {
+      const st = getComputedStyle(el);
+      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') &&
+          el.scrollHeight > el.clientHeight + 1) {
+        const suPossibile  = el.scrollTop > 0;
+        const giuPossibile = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+        if ((dy < 0 && suPossibile) || (dy > 0 && giuPossibile)) return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function _primoScroller(root) {
+    if (!root || root.nodeType !== 1) return null;
+    const puo = (el) => {
+      if (!el || el.nodeType !== 1) return false;
+      const st = getComputedStyle(el);
+      return (st.overflowY === 'auto' || st.overflowY === 'scroll') &&
+             el.scrollHeight > el.clientHeight + 1;
+    };
+    if (puo(root)) return root;
+    const dentro = root.querySelectorAll('*');
+    for (const el of dentro) if (puo(el)) return el;
+    return null;
+  }
+
+  function _scrollerPrincipale() {
+    // Modale/maschera a tutto schermo in cima (sono figli diretti di <body>).
+    const kids = Array.from(document.body.children);
+    const modali = [];
+    for (const el of kids) {
+      const st = getComputedStyle(el);
+      if (st.position !== 'fixed' || st.display === 'none' ||
+          st.visibility === 'hidden' || +st.opacity === 0) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width >= window.innerWidth * 0.5 && r.height >= window.innerHeight * 0.5) {
+        modali.push(el);
+      }
+    }
+    modali.sort((a, b) => (+getComputedStyle(a).zIndex || 0) -
+                          (+getComputedStyle(b).zIndex || 0));
+    for (let i = modali.length - 1; i >= 0; i--) {
+      const pick = _primoScroller(modali[i]);
+      if (pick) return pick;
+    }
+    // Altrimenti: contenitore scrollabile della vista attiva.
+    const view = document.querySelector('.view.active');
+    return _primoScroller(view) || view;
+  }
+
+  function _installWheelRouter() {
+    if (window.__wheelRouter) return;
+    window.__wheelRouter = true;
+    document.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) return;                       // pinch/zoom: non toccare
+      const dy = e.deltaY;
+      if (!dy) return;
+      if (_scrollerMuovibile(e.target, dy)) return;  // già gestibile nativamente
+      const sc = _scrollerPrincipale();
+      if (sc && sc.scrollHeight > sc.clientHeight + 1) {
+        sc.scrollTop += dy;
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
+
+  // Abbina un valore derivato dal JSON (`autoVal`) a una delle opzioni di un
+  // dropdown, tollerando booleani e sinonimi SI/NO. Serve alla regola «NO resta
+  // NO» (feedback Marco 2026-11-12): un valore NEGATIVO dal JSON (false / "no" /
+  // "NO" / "non necessaria" / "assente") deve selezionare l'opzione negativa, non
+  // ricadere sulla prima opzione (spesso "Sì"). Ritorna il value dell'opzione o
+  // undefined se non c'è un abbinamento affidabile (allora si userà il default).
+  function _matchOption(autoVal, options) {
+    if (autoVal === undefined || autoVal === null) return undefined;
+    const vals = options.map(o => o.value);
+    if (vals.includes(String(autoVal))) return String(autoVal);
+    const norm = String(autoVal).trim().toLowerCase();
+    const NEG = ['no', 'false', '0', 'assente', 'non necessaria',
+                 'non necessario', 'non presente', 'nessuna', 'nessuno'];
+    const POS = ['si', 'sì', 'true', '1', 'presente', 'presente e completa'];
+    const isNeg = (autoVal === false) || NEG.includes(norm);
+    const isPos = (autoVal === true) || POS.includes(norm);
+    const low = v => String(v).trim().toLowerCase();
+    const optNeg = vals.find(v => NEG.includes(low(v)));
+    const optPos = vals.find(v => POS.includes(low(v)));
+    if (isNeg && optNeg !== undefined) return optNeg;
+    if (isPos && optPos !== undefined) return optPos;
+    return undefined;
+  }
+
   async function init() {
+    _installWheelRouter();
     const splashStart = Date.now();
     _setSplash(8, 'Avvio…');
 
@@ -858,11 +959,29 @@ const App = (() => {
          <span class="dvr-btn-tt">${v.label}</span><small>${v.note}</small>
        </button>`
     ).join('');
+    const cap2Semp = !!client.cap2_semplificato;
     bar.innerHTML =
       `<div class="dvr-type-head"><span>Tipo di DVR</span>${detHtml}
          <button class="dvr-type-collapse" onclick="App.toggleDvrType()" title="Comprimi">${_CHEVRON_UP}</button></div>
-       <div class="dvr-type-opts">${btns}</div>`;
+       <div class="dvr-type-opts">${btns}</div>
+       <label class="dvr-cap2-simp" title="Usa il Capitolo 2 nella variante per ristoranti, negozi e uffici (schede §3 senza compressori e carrelli elevatori)">
+         <input type="checkbox" ${cap2Semp ? 'checked' : ''}
+                onchange="App.onToggleCap2Semplificato(this.checked)">
+         <span>Cap&nbsp;2 semplificato
+           <small>ristoranti / negozi / uffici — senza compressori e carrelli elevatori</small></span>
+       </label>`;
     bar.style.display = '';
+  }
+
+  async function onToggleCap2Semplificato(val) {
+    if (!state.currentClient) return;
+    state.currentClient.cap2_semplificato = !!val;
+    const jp = state.currentClient.json_path;
+    if (jp) {
+      try { await call('imposta_cap2_semplificato', jp, !!val); } catch (e) {}
+    }
+    toast(val ? 'Cap 2 semplificato attivato per questo cliente'
+              : 'Cap 2 standard ripristinato', 'success', 2600);
   }
 
   function toggleDvrType() {
@@ -1031,12 +1150,18 @@ const App = (() => {
   }
 
   /* ── Allegato 32 — maschera segnaletica (a tutto schermo) ─────────────── */
-  async function _openAlg32Fullscreen() {
+  async function _openAlg32Fullscreen(target) {
     const ov = document.getElementById('alg32-fullscreen');
     const box = document.getElementById('alg32-fs-body');
     if (!ov || !box) return;
     const jp = state.currentClient?.json_path;
     if (!jp) { toast('Apri un cliente', 'error'); return; }
+    // #19: la stessa maschera serve sia agli Allegati sia al Piano di intervento
+    // (file 05 segnaletica). Il bersaglio decide cosa generare alla chiusura.
+    state._alg32Target = (target === 'piano') ? 'piano' : 'allegati';
+    const actBtn = ov.querySelector('.alg32-fs-actions .alg-btn--solid');
+    if (actBtn) actBtn.textContent = state._alg32Target === 'piano'
+      ? 'Salva e genera Piano' : 'Salva e genera allegati';
     ov.style.display = 'flex'; ov.dataset.open = '1';
     box.innerHTML = '<div class="alg32-loading">Caricamento cartelli…</div>';
     try {
@@ -1061,7 +1186,11 @@ const App = (() => {
     const jp = state.currentClient?.json_path;
     if (jp) { try { await call('salva_allegato32', jp, state.alg32Scelte || {}); } catch (e) {} }
     if (ov) { ov.style.display = 'none'; ov.dataset.open = '0'; }
-    if (genera) await _doGeneraAllegati(_tipoDvrCliente(state.currentClient));
+    if (genera) {
+      if (state._alg32Target === 'piano') await _doGeneraPiano();
+      else await _doGeneraAllegati(_tipoDvrCliente(state.currentClient));
+    }
+    state._alg32Target = 'allegati';   // reset al default
   }
 
   function _alg32CatCount(cat) {
@@ -1169,11 +1298,57 @@ const App = (() => {
          <input class="piano-in" type="text" placeholder="Telefono" value="${escAttr(tec.telefono||'')}" oninput="App.onPianoTecnico('telefono', this.value)">
          <input class="piano-in" type="text" placeholder="Email" value="${escAttr(tec.email||'')}" oninput="App.onPianoTecnico('email', this.value)">
        </div>
+       ${_estintoriPesoHtml(tec)}
        <div class="piano-actions">
          <button class="alg-btn alg-btn--solid" onclick="App.generaPiano()">Genera cartella Piano di intervento</button>
        </div>
        <div id="piano-results" class="alg-results"></div>
       </div>`;
+  }
+
+  // #20b: maschera peso/litri estintori per la checklist 06. I tipi presenti si
+  // leggono dalla strategia antincendio del JSON; il tecnico sceglie la capacità.
+  const _C06_ESTINTORI = {
+    acqua:   { label: 'Estintore ad acqua',  caps: ['6 litri', '9 litri', '12 litri'], def: '6 litri' },
+    schiuma: { label: 'Estintore a schiuma', caps: ['2 litri', '6 litri', '9 litri'],  def: '6 litri' },
+    polvere: { label: 'Estintore a polvere', caps: ['2 kg', '6 kg', '9 kg', '12 kg', '50 kg'], def: '6 kg' },
+    co2:     { label: 'Estintore a CO₂',     caps: ['2 kg', '5 kg'], def: '5 kg' },
+  };
+  function _estintoriTipiPresenti() {
+    const present = new Set();
+    const idmap = { estintori_idrici: 'acqua', estintori_schiuma: 'schiuma',
+                    estintori_abc: 'polvere', estintori_co2: 'co2' };
+    const aree = state.jsonRaw?.valutazione_incendio?.aree || [];
+    aree.forEach(a => (a.strategia_antincendio || []).forEach(b => (b.voci || []).forEach(v => {
+      if (v && idmap[v.id] && v.valore === true) present.add(idmap[v.id]);
+    })));
+    return present;
+  }
+  function _estintoriPesoHtml(tec) {
+    const present = _estintoriTipiPresenti();
+    if (!present.size) return '';
+    const peso = (tec && tec.estintori_peso) || {};
+    const rows = [...present].map(k => {
+      const info = _C06_ESTINTORI[k]; if (!info) return '';
+      const cur = peso[k] || info.def;
+      const opts = info.caps.map(c =>
+        `<option value="${escAttr(c)}"${c === cur ? ' selected' : ''}>${escHtml(c)}</option>`).join('');
+      return `<label class="piano-est-row"><span>${info.label}</span>
+        <select class="piano-in" onchange="App.onPianoEstintorePeso('${k}', this.value)">${opts}</select></label>`;
+    }).join('');
+    return `<div class="piano-est">
+      <div class="piano-est-h">Peso/litri estintori (checklist 06) — tipi rilevati dal JSON</div>
+      ${rows}</div>`;
+  }
+  function onPianoEstintorePeso(tipo, value) {
+    if (!state.pianoTecnico) state.pianoTecnico = {};
+    if (!state.pianoTecnico.estintori_peso) state.pianoTecnico.estintori_peso = {};
+    state.pianoTecnico.estintori_peso[tipo] = value;
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_pianoSaveT);
+    _pianoSaveT = setTimeout(() =>
+      call('salva_piano_tecnico', jp, state.pianoTecnico || {}).catch(() => {}), 500);
   }
 
   let _pianoSaveT = null;
@@ -1191,8 +1366,16 @@ const App = (() => {
   async function generaPiano() {
     const jp = state.currentClient?.json_path;
     if (!jp) { toast('Apri un cliente', 'error'); return; }
-    // salva subito il tecnico, poi genera
+    // salva subito il tecnico
     try { await call('salva_piano_tecnico', jp, state.pianoTecnico || {}); } catch (e) {}
+    // #19: apre la maschera segnaletica (come per gli allegati); "Salva e genera
+    // Piano" compila anche il file 05 (segnaletica) con le scelte del tecnico.
+    await _openAlg32Fullscreen('piano');
+  }
+
+  async function _doGeneraPiano() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
     showLoading('Generazione Piano di intervento…');
     const res = await call('genera_piano_intervento', jp, true);
     hideLoading();
@@ -2357,9 +2540,10 @@ const App = (() => {
         // di sovrascrivere il valore ripristinato da applySavedFormData.
         if (sel && sel.options.length > 0 && state.formValues[fd.id] === undefined) {
           const autoVal = state.autoFields ? state.autoFields[fd.id] : undefined;
-          const valido = autoVal !== undefined &&
-            Array.from(sel.options).some(o => o.value === autoVal);
-          const val = valido ? autoVal : sel.options[0].value;
+          // «NO resta NO»: abbina anche booleani/sinonimi; un negativo dal JSON
+          // seleziona l'opzione negativa invece di ricadere sulla prima opzione.
+          const matched = _matchOption(autoVal, Array.from(sel.options));
+          const val = (matched !== undefined) ? matched : sel.options[0].value;
           sel.value = val;
           state.formValues[fd.id] = val;
         }
@@ -2504,9 +2688,10 @@ const App = (() => {
 
     } else if (fd.type === 'cap14_editor') {
       wrap.style.gridColumn = '1 / -1';
+      wrap.setAttribute('data-field-id', fd.id);
       const cap14Data = (prefill[fd.id] || state.tablePrefill[fd.id] || {});
-      wrap.innerHTML = buildCap14Editor(fd.id, cap14Data);
-      setTimeout(() => initCap14Editor(fd.id, cap14Data), 0);
+      initCap14Editor(fd.id, cap14Data);
+      wrap.innerHTML = buildCap14Editor(fd.id, state.formValues[fd.id]);
 
     } else if (fd.type === 'cap6_editor') {
       wrap.style.gridColumn = '1 / -1';
@@ -3814,31 +3999,25 @@ const App = (() => {
 
   /* ── Cap4 Editor (Attrezzature + Impianti) ──────────────────────────────── */
 
-  function buildCap4Editor(fieldId, data) {
-    const attrezzature = (data && data.attrezzature) || [];
-    const lavoriTensione = !!(data && data.lavori_tensione);
-    const manutenzioneAffidata = (data && data.manutenzione_affidata !== undefined)
-      ? data.manutenzione_affidata : true;
-    const isp = (data && data.aeraulico_ispezioni) || {};
-    const ispRow = (key, label) => `
-      <div class="cap4-isp-row">
-        <label class="cap4-isp-lbl">${label}</label>
-        <input class="field-input" type="text" value="${escAttr(isp[key] || '')}"
-          placeholder="Nominativo…"
-          onchange="App.onCap4Ispezione('${fieldId}','${key}',this.value)">
-      </div>`;
+  // Righe tabella attrezzature (lette SEMPRE dallo stato, così la ricerca e
+  // l'aggiunta/rimozione rigenerano coerentemente). Feedback Marco 2026-11-12.
+  function _cap4AttrList(fieldId) {
+    return (state.formValues[fieldId] && state.formValues[fieldId].attrezzature) || [];
+  }
 
-    const attrRows = attrezzature.map((a, i) => {
+  function _cap4AttrRowsHtml(fieldId) {
+    return _cap4AttrList(fieldId).map((a, i) => {
       const ce = a.ce || 'Sì';
       const anteCe = a.ante_ce || 'No';
       const incl = a.selezionata !== false;
-      return `<tr>
+      const nome = a.nome || '';
+      return `<tr data-cap4-row="${i}" data-nome="${escAttr(nome.toLowerCase())}">
         <td style="text-align:center">
           <input type="checkbox" class="cap4-attr-incl" ${incl ? 'checked' : ''}
             title="Includi nel DVR"
             onchange="App.onCap4AttrInclude('${fieldId}',${i},this.checked)"></td>
         <td style="text-align:center;color:var(--gray-600);font-size:11px">${a.ref || (i + 1)}</td>
-        <td style="font-size:12px">${escHtml(a.nome || '')}</td>
+        <td style="font-size:12px">${escHtml(nome)}</td>
         <td style="text-align:center">
           <div style="display:inline-flex;gap:4px">
             <button id="cap4-${fieldId}-${i}-ce-si"
@@ -3859,30 +4038,104 @@ const App = (() => {
               onclick="App.onCap4AttrChange('${fieldId}',${i},'ante_ce','No')">No</button>
           </div>
         </td>
+        <td style="text-align:center">
+          <button class="cap4-attr-del" title="Rimuovi"
+            onclick="App.onCap4AttrRemove('${fieldId}',${i})">✕</button>
+        </td>
       </tr>`;
     }).join('');
+  }
 
-    const attrTable = attrezzature.length === 0
-      ? `<div class="cap2-no-data">Nessuna attrezzatura trovata nel JSON (sezione ciclo_lavoro).</div>`
+  function _cap4AttrSectionHtml(fieldId) {
+    const arr = _cap4AttrList(fieldId);
+    const table = arr.length === 0
+      ? `<div class="cap2-no-data">Nessuna attrezzatura. Aggiungine una qui sotto.</div>`
       : `<div style="overflow-x:auto">
           <table class="risk-matrix">
-            <thead>
-              <tr>
-                <th style="width:60px">Includi</th>
-                <th style="width:56px">Rif.</th>
-                <th>Nome Attrezzatura / DPI</th>
-                <th style="width:70px">CE</th>
-                <th style="width:80px">Ante-CE</th>
-              </tr>
-            </thead>
-            <tbody>${attrRows}</tbody>
+            <thead><tr>
+              <th style="width:60px">Includi</th>
+              <th style="width:56px">Rif.</th>
+              <th>Nome Attrezzatura / DPI</th>
+              <th style="width:70px">CE</th>
+              <th style="width:80px">Ante-CE</th>
+              <th style="width:44px"></th>
+            </tr></thead>
+            <tbody>${_cap4AttrRowsHtml(fieldId)}</tbody>
           </table>
         </div>`;
+    return `
+      <div class="cap4-attr-bar">
+        <input type="text" class="field-input cap4-attr-search"
+               placeholder="Cerca attrezzatura…"
+               oninput="App.onCap4AttrFilter('${fieldId}', this.value)">
+        <input type="text" class="field-input cap4-attr-new" id="cap4-attr-new-${fieldId}"
+               placeholder="Aggiungi attrezzatura…"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();App.onCap4AttrAdd('${fieldId}')}">
+        <button type="button" class="btn btn-outline cap4-attr-addbtn"
+                onclick="App.onCap4AttrAdd('${fieldId}')">+ Aggiungi</button>
+      </div>
+      ${table}`;
+  }
+
+  function onCap4AttrFilter(fieldId, q) {
+    const wrap = document.getElementById(`cap4-attr-wrap-${fieldId}`);
+    if (!wrap) return;
+    const needle = (q || '').trim().toLowerCase();
+    wrap.querySelectorAll('tr[data-cap4-row]').forEach(tr => {
+      const nome = tr.getAttribute('data-nome') || '';
+      tr.style.display = (!needle || nome.includes(needle)) ? '' : 'none';
+    });
+  }
+
+  function _rerenderCap4Attr(fieldId) {
+    const wrap = document.getElementById(`cap4-attr-wrap-${fieldId}`);
+    if (wrap) wrap.innerHTML = _cap4AttrSectionHtml(fieldId);
+  }
+
+  function onCap4AttrAdd(fieldId) {
+    const inp = document.getElementById(`cap4-attr-new-${fieldId}`);
+    const nome = ((inp && inp.value) || '').trim();
+    if (!nome) return;
+    if (!state.formValues[fieldId]) state.formValues[fieldId] = { attrezzature: [] };
+    if (!state.formValues[fieldId].attrezzature) state.formValues[fieldId].attrezzature = [];
+    const arr = state.formValues[fieldId].attrezzature;
+    if (arr.some(a => (a.nome || '').trim().toLowerCase() === nome.toLowerCase())) {
+      toast('Attrezzatura già presente nella lista', 'error', 2200); return;
+    }
+    arr.push({ ref: arr.length + 1, nome, ce: 'Sì', ante_ce: 'No', selezionata: true });
+    saveChapterDraft();
+    _rerenderCap4Attr(fieldId);
+  }
+
+  function onCap4AttrRemove(fieldId, idx) {
+    const arr = state.formValues[fieldId] && state.formValues[fieldId].attrezzature;
+    if (!arr || !arr[idx]) return;
+    arr.splice(idx, 1);
+    arr.forEach((a, i) => { a.ref = i + 1; });
+    saveChapterDraft();
+    _rerenderCap4Attr(fieldId);
+  }
+
+  function buildCap4Editor(fieldId, data) {
+    // Inizializza lo stato PRIMA di costruire, così la sezione attrezzature (con
+    // ricerca/aggiungi/rimuovi) legge e rigenera sempre da state.formValues.
+    if (!state.formValues[fieldId]) initCap4Editor(fieldId, data);
+    const lavoriTensione = !!(data && data.lavori_tensione);
+    const manutenzioneAffidata = (data && data.manutenzione_affidata !== undefined)
+      ? data.manutenzione_affidata : true;
+    const isp = (data && data.aeraulico_ispezioni) || {};
+    const ispRow = (key, label) => `
+      <div class="cap4-isp-row">
+        <label class="cap4-isp-lbl">${label}</label>
+        <input class="field-input" type="text" value="${escAttr(isp[key] || '')}"
+          placeholder="Nominativo…"
+          onchange="App.onCap4Ispezione('${fieldId}','${key}',this.value)">
+      </div>`;
 
     return `
       <div class="cap4-section">
         <div class="cap2-section-label">Attrezzature Utilizzate in Azienda</div>
-        ${attrTable}
+        <div id="cap4-attr-wrap-${fieldId}">${_cap4AttrSectionHtml(fieldId)}</div>
       </div>
       <div class="cap4-section" style="margin-top:18px">
         <div class="cap2-section-label">Scelte Impianti</div>
@@ -4194,25 +4447,6 @@ const App = (() => {
       ? `Nessun prodotto chimico è stato rilevato nel file JSON. Attività dell'azienda: <b>${escHtml(tipoAtt)}</b>. Individua i prodotti chimici tipici di questa attività e allega qui sotto le relative schede di valutazione.`
       : `Nessun prodotto chimico è stato rilevato nel file JSON.`;
 
-    const gruppiHtml = gruppi.length ? (() => {
-      const counter = { n: 1 };
-      return gruppi.map(g => {
-        const prodsHtml = (g.prodotti_chimici || []).map(pc => {
-          const n = counter.n++;
-          return `<div class="cap14-product">
-            <div class="cap14-product-info">
-              <span class="cap14-scheda-n">${n}</span>
-              <span class="cap14-product-name">${escHtml(pc.nome || '')}</span>
-            </div>
-          </div>`;
-        }).join('');
-        return `<div class="cap14-group">
-          <div class="cap14-group-header">${escHtml(g.nome || '')}</div>
-          <div class="cap14-group-products">${prodsHtml}</div>
-        </div>`;
-      }).join('');
-    })() : '<p class="cap14-note">Nessun prodotto chimico trovato nel JSON.</p>';
-
     const schedeHtml = schede.map((p, idx) => {
       const fname = p.split('\\').pop() || p.split('/').pop() || p;
       return `<div class="cap14-sds-row">
@@ -4224,11 +4458,9 @@ const App = (() => {
     setTimeout(() => _loadCap14Catalog(fieldId), 0);
     return `
       <div class="cap4-section">
-        <div class="cap2-section-label">Prodotti chimici rilevati dal JSON</div>
-        ${gruppi.length
-          ? `<p class="cap14-note">Questi sono i prodotti chimici rilevati dal file JSON e già inseriti nel documento, raggruppati per fase di lavoro. Qui sotto seleziona le relative schede di valutazione dei rischi dal database.</p>
-        <div class="cap14-groups">${gruppiHtml}</div>`
-          : `<p class="cap14-empty">${emptyMsg}</p>`}
+        <div class="cap2-section-label">Prodotti chimici — modificabili</div>
+        <p class="cap14-note">Aggiungi, modifica o elimina i prodotti chimici (raggruppati per fase di lavoro). Sotto ogni prodotto il software suggerisce la <b>scheda §3.2</b> più simile dal database: puoi cercarne e sceglierne un'altra. Le modifiche valgono anche per il Capitolo 2.</p>
+        <div id="cap14-prods-${fieldId}">${_cap14ProductsHtml(fieldId)}</div>
       </div>
       <div class="cap4-section cap14-db-section">
         <div class="cap2-section-label">§3.2 Schede di valutazione dei rischi (database)</div>
@@ -4246,6 +4478,155 @@ const App = (() => {
           ${ic('paperclip', 13)} Aggiungi SDS esterna
         </button>
       </div>`;
+  }
+
+  // ── Cap14: prodotti modificabili + scheda §3.2 inline (feedback Marco 2026-11-12)
+  function _cap14ProductsHtml(fieldId) {
+    const ed = state.formValues[fieldId] || {};
+    const gruppi = ed.gruppi || [];
+    const cat = state.chimicoCatalog || [];
+    if (!gruppi.length) {
+      return `<p class="cap14-empty">Nessun gruppo. I prodotti compaiono per fase di lavoro dal JSON.</p>`;
+    }
+    let n = 0;
+    return gruppi.map((g, gi) => {
+      const prods = (g.prodotti_chimici || []).map((pc, pi) => {
+        n++;
+        // Scheda: scelta esplicita del tecnico, altrimenti suggerimento automatico.
+        let schedaLbl = '', schedaCls = '';
+        if (pc.scheda_nome || pc.scheda_file) {
+          schedaLbl = pc.scheda_nome || pc.scheda_file; schedaCls = ' set';
+        } else {
+          const m = cat.length ? _c14Match(pc.nome || '', cat) : null;
+          schedaLbl = m ? `${m.nome} (suggerita)` : (cat.length ? 'nessuna corrispondenza' : '…');
+        }
+        return `<div class="cap14-product" data-gi="${gi}" data-pi="${pi}">
+          <div class="cap14-prod-top">
+            <span class="cap14-scheda-n">${n}</span>
+            <input class="cap14-prod-name field-input" value="${escAttr(pc.nome || '')}"
+              placeholder="Nome prodotto…"
+              onchange="App.onCap14ProdName('${fieldId}',${gi},${pi},this.value)">
+            <button class="cap14-prod-del" title="Elimina prodotto"
+              onclick="App.onCap14ProdRemove('${fieldId}',${gi},${pi})">✕</button>
+          </div>
+          <div class="cap14-prod-scheda">
+            <span class="cap14-prod-scheda-lbl">Scheda §3.2:</span>
+            <span class="cap14-prod-scheda-cur${schedaCls}">${escHtml(schedaLbl)}</span>
+            <input class="cap14-prod-schedasearch field-input" placeholder="cerca/cambia scheda…"
+              oninput="App.onCap14ProdSchedaSearch('${fieldId}',${gi},${pi},this.value)">
+            <div class="cap14-sr" id="cap14-sr-${fieldId}-${gi}-${pi}"></div>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="cap14-group">
+        <div class="cap14-group-header">${escHtml(g.nome || 'Gruppo')}</div>
+        <div class="cap14-group-products">${prods}</div>
+        <div class="cap14-prod-add">
+          <input class="field-input" id="cap14-newprod-${fieldId}-${gi}"
+            placeholder="Aggiungi prodotto a «${escAttr(g.nome || 'gruppo')}»…"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();App.onCap14ProdAdd('${fieldId}',${gi})}">
+          <button class="btn btn-outline" onclick="App.onCap14ProdAdd('${fieldId}',${gi})">+ Prodotto</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function _rerenderCap14Prods(fieldId) {
+    const box = document.getElementById(`cap14-prods-${fieldId}`);
+    if (box) box.innerHTML = _cap14ProductsHtml(fieldId);
+  }
+
+  // #4: lista prodotti CONDIVISA Cap2↔Cap14. A ogni modifica nel Cap14 si salva
+  // la lista (per nome gruppo); il backend la inietta nel prefill del Cap2, così
+  // la selezione resta unica. L'export rigenera tutti i capitoli → Cap2 allineato.
+  let _cap14ShareT = null;
+  function _cap14SaveShared(fieldId) {
+    const ed = state.formValues[fieldId] || {};
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    const gruppi = {};
+    (ed.gruppi || []).forEach(g => {
+      const key = (g.nome || '').trim().toLowerCase();
+      if (!key) return;
+      gruppi[key] = (g.prodotti_chimici || []).map(p => (p.nome || '').trim()).filter(Boolean);
+    });
+    clearTimeout(_cap14ShareT);
+    _cap14ShareT = setTimeout(() =>
+      call('imposta_chimici_condivisi', jp, gruppi).catch(() => {}), 400);
+  }
+
+  function _cap14MarkCap2Stale(fieldId) {
+    _cap14SaveShared(fieldId);
+    try {
+      if (!state.currentClient) return;
+      state.currentClient._cap2Stale = true;
+      if (!state._cap2StaleToast) {
+        state._cap2StaleToast = true;
+        toast('Prodotti condivisi con il Cap 2: verrà riallineato alla generazione', 'info', 3500);
+      }
+    } catch (e) {}
+  }
+
+  function onCap14ProdName(fieldId, gi, pi, value) {
+    const pc = (((state.formValues[fieldId] || {}).gruppi || [])[gi] || {}).prodotti_chimici?.[pi];
+    if (!pc) return;
+    pc.nome = value;
+    _cap14MarkCap2Stale(fieldId);
+    saveChapterDraft();
+  }
+
+  function onCap14ProdRemove(fieldId, gi, pi) {
+    const arr = (((state.formValues[fieldId] || {}).gruppi || [])[gi] || {}).prodotti_chimici;
+    if (!arr || !arr[pi]) return;
+    arr.splice(pi, 1);
+    _cap14MarkCap2Stale(fieldId);
+    _rerenderCap14Prods(fieldId);
+    saveChapterDraft();
+  }
+
+  function onCap14ProdAdd(fieldId, gi) {
+    const inp = document.getElementById(`cap14-newprod-${fieldId}-${gi}`);
+    const nome = ((inp && inp.value) || '').trim();
+    if (!nome) return;
+    const g = ((state.formValues[fieldId] || {}).gruppi || [])[gi];
+    if (!g) return;
+    if (!Array.isArray(g.prodotti_chimici)) g.prodotti_chimici = [];
+    if (g.prodotti_chimici.some(p => (p.nome || '').trim().toLowerCase() === nome.toLowerCase())) {
+      toast('Prodotto già presente in questo gruppo', 'error', 2200); return;
+    }
+    g.prodotti_chimici.push({ nome });
+    _cap14MarkCap2Stale(fieldId);
+    _rerenderCap14Prods(fieldId);
+    saveChapterDraft();
+  }
+
+  function onCap14ProdSchedaSearch(fieldId, gi, pi, q) {
+    const box = document.getElementById(`cap14-sr-${fieldId}-${gi}-${pi}`);
+    if (!box) return;
+    const cat = state.chimicoCatalog || [];
+    const qn = _c14Norm(q);
+    if (!qn) { box.innerHTML = ''; return; }
+    const res = cat.map((c, idx) => ({ c, idx }))
+      .filter(({ c }) => _c14Norm(c.nome).includes(qn)).slice(0, 8);
+    box.innerHTML = res.length
+      ? res.map(({ c, idx }) =>
+          `<div class="cap14-sr-item" onclick="App.onCap14ProdSchedaPick('${fieldId}',${gi},${pi},${idx})">${escHtml(c.nome)}</div>`).join('')
+      : '<div class="cap14-sr-none">nessuna scheda nel database</div>';
+  }
+
+  function onCap14ProdSchedaPick(fieldId, gi, pi, catIdx) {
+    const ed = state.formValues[fieldId];
+    const pc = ((ed || {}).gruppi || [])[gi]?.prodotti_chimici?.[pi];
+    const c = (state.chimicoCatalog || [])[catIdx];
+    if (!pc || !c) return;
+    pc.scheda_file = c.file;
+    pc.scheda_nome = c.nome;
+    if (!Array.isArray(ed.schede_db)) ed.schede_db = [];
+    if (!ed.schede_db.includes(c.file)) ed.schede_db.push(c.file);
+    ed._schede_db_seeded = true;   // non ri-seedare sovrascrivendo la scelta
+    _rerenderCap14Prods(fieldId);
+    _renderCap14Catalog(fieldId);
+    saveChapterDraft();
   }
 
   // ── Cap14: database schede valutazione rischio chimico ───────────────────
@@ -4303,6 +4684,7 @@ const App = (() => {
       return;
     }
     _renderCap14Catalog(fieldId);
+    _rerenderCap14Prods(fieldId);   // ora che il catalogo c'è, mostra le schede suggerite
   }
 
   function _renderCap14Catalog(fieldId) {
@@ -8560,18 +8942,27 @@ const App = (() => {
       setTimeout(() => showConfig(), 700);
       return;
     }
-    const chaptersList = (client.chapters || [])
-      .filter(ch => (ch.form_data || ch.manual_edit) && !_isCapEscluso(ch.id)
+    // Export di TUTTI i capitoli applicabili (attivi, non esclusi, non nascosti),
+    // ANCHE quelli non ancora aperti nella maschera (feedback Marco 2026-11-12,
+    // #17/#18 Cap22): per i capitoli senza bozza il backend ricostruisce dal JSON
+    // del cliente (prefill in `_merge_json_prefill` + `_capitoli`). I capitoli già
+    // lavorati portano la loro form_data / modifica manuale.
+    const _lavorati = new Map((client.chapters || []).map(c => [c.id, c]));
+    const chaptersList = (state.chaptersCache || [])
+      .filter(ch => ch.active && !_isCapEscluso(ch.id)
                     && !_hiddenForClient(ch.id, client))
-      .map(ch => ({
-        id: ch.id,
-        form_data: ch.form_data || {},
-        suggested_name: _buildSuggestedName(ch.id, ch.form_data || {}),
-        manual_edit: !!ch.manual_edit,
-        output_path: ch.output_path || '',
-      }));
+      .map(ch => {
+        const w = _lavorati.get(ch.id) || {};
+        return {
+          id: ch.id,
+          form_data: w.form_data || {},
+          suggested_name: _buildSuggestedName(ch.id, w.form_data || {}),
+          manual_edit: !!w.manual_edit,
+          output_path: w.output_path || '',
+        };
+      });
     if (!chaptersList.length) {
-      toast('Nessun capitolo con dati da esportare.', 'error'); return;
+      toast('Nessun capitolo applicabile da esportare.', 'error'); return;
     }
     const label = format === 'pdf' ? 'PDF' : format === 'all' ? 'DOCX + PDF' : 'DOCX';
     showLoading(`Generazione ${label} in corso…`);
@@ -8603,6 +8994,17 @@ const App = (() => {
       ? ` + ${alg.n} allegati (cartella "Allegati")`
       : '';
     toast(`${res.count} document${res.count === 1 ? 'o' : 'i'} salvati${msgAlg}`, 'success', 5000);
+    // #17: l'export genera anche il PIANO DI INTERVENTO del cliente (se manca
+    // viene creato), usando le scelte segnaletica e il tecnico già salvati.
+    try {
+      const piano = await call('genera_piano_intervento', client.json_path, false);
+      if (piano && !piano.error) {
+        toast(`Piano di intervento generato (${piano.n_compilati || 0}/${piano.n_totali || 0} file)`,
+              'success', 4000);
+      } else if (piano && piano.error) {
+        toast('DVR esportato, ma Piano di intervento non generato: ' + piano.error, 'info', 5000);
+      }
+    } catch (e) {}
   }
 
   /* ── Public API ─────────────────────────────────────────────────────── */
@@ -8617,10 +9019,10 @@ const App = (() => {
   return {
     init, showHome, showClient, showConfig, toggleTheme,
     pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
-    onPickTipoDvr, toggleDvrType, setClientSection, generaAllegati,
+    onPickTipoDvr, toggleDvrType, onToggleCap2Semplificato, setClientSection, generaAllegati,
     apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
     esportaAllegatiPdf, chiudiAlg32Fullscreen, onAlg32Toggle, onAlg32Pos,
-    onPianoTecnico, generaPiano,
+    onPianoTecnico, onPianoEstintorePeso, generaPiano,
     generaLettera, apriCartellaLettera, onLetteraToggle, onLetteraCampo, letteraAuto,
     letteraExpand, letteraExpandAll,
     onToggleTemplateCap, onToggleCapitoloEscluso, toggleShowExcluded,
@@ -8648,6 +9050,7 @@ const App = (() => {
     onCap3AddManual, onCap3AddLocale, onCap3RemoveLocale,
     // Cap4 editor
     onCap4Change, onCap4AttrChange, onCap4AttrInclude, onCap4Ispezione,
+    onCap4AttrFilter, onCap4AttrAdd, onCap4AttrRemove,
     // Cap5 editor
     onCap5Toggle,
     // Cap1 turno picker
@@ -8679,6 +9082,8 @@ const App = (() => {
     // Cap14 editor
     pickSchedaValutazione, removeSchedaValutazione,
     onCap14SchedaToggle, onCap14Search,
+    onCap14ProdName, onCap14ProdRemove, onCap14ProdAdd,
+    onCap14ProdSchedaSearch, onCap14ProdSchedaPick,
     // Cap7 editor
     onC7SchedaToggle,
     // Cap17 editor
