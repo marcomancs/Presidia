@@ -4459,16 +4459,8 @@ const App = (() => {
     return `
       <div class="cap4-section">
         <div class="cap2-section-label">Prodotti chimici — modificabili</div>
-        <p class="cap14-note">Aggiungi, modifica o elimina i prodotti chimici (raggruppati per fase di lavoro). Sotto ogni prodotto il software suggerisce la <b>scheda §3.2</b> più simile dal database: puoi cercarne e sceglierne un'altra. Le modifiche valgono anche per il Capitolo 2.</p>
+        <p class="cap14-note">Aggiungi, modifica o elimina i prodotti chimici (raggruppati per fase di lavoro). Sotto ogni prodotto spunta <b>Scheda §3.2</b> per inserire nel documento la scheda suggerita, oppure cerca e scegline un'altra. Le modifiche valgono anche per il Capitolo 2.</p>
         <div id="cap14-prods-${fieldId}">${_cap14ProductsHtml(fieldId)}</div>
-      </div>
-      <div class="cap4-section cap14-db-section">
-        <div class="cap2-section-label">§3.2 Schede di valutazione dei rischi (database)</div>
-        <p class="cap14-note">Seleziona le schede da inserire nel documento (verranno incollate in <b>Word, modificabili</b>). Quelle <b>suggerite</b> in base ai prodotti rilevati sono già spuntate: puoi aggiungerne o toglierne a mano.</p>
-        <input class="cap14-search" type="text" placeholder="Cerca scheda nel database…"
-          value="${escAttr(ed._catSearch || '')}"
-          oninput="App.onCap14Search('${fieldId}', this.value)">
-        <div id="cap14-catalog-${fieldId}" class="cap14-catalog">Caricamento database…</div>
       </div>
       <div class="cap4-section cap14-schede-section">
         <div class="cap2-section-label">SDS esterne (facoltative)</div>
@@ -4492,14 +4484,13 @@ const App = (() => {
     return gruppi.map((g, gi) => {
       const prods = (g.prodotti_chimici || []).map((pc, pi) => {
         n++;
-        // Scheda: scelta esplicita del tecnico, altrimenti suggerimento automatico.
-        let schedaLbl = '', schedaCls = '';
-        if (pc.scheda_nome || pc.scheda_file) {
-          schedaLbl = pc.scheda_nome || pc.scheda_file; schedaCls = ' set';
-        } else {
-          const m = cat.length ? _c14Match(pc.nome || '', cat) : null;
-          schedaLbl = m ? `${m.nome} (suggerita)` : (cat.length ? 'nessuna corrispondenza' : '…');
-        }
+        // Scheda §3.2: scelta esplicita del tecnico, altrimenti la suggerita.
+        const m = cat.length ? _c14Match(pc.nome || '', cat) : null;
+        const hasScheda = !!pc.scheda_file;
+        const sugName = m ? m.nome : '';
+        const schedaLbl = hasScheda ? (pc.scheda_nome || pc.scheda_file)
+          : (sugName || (cat.length ? 'nessuna scheda corrispondente' : '…'));
+        const disabled = (!m && !hasScheda) ? ' disabled' : '';
         return `<div class="cap14-product" data-gi="${gi}" data-pi="${pi}">
           <div class="cap14-prod-top">
             <span class="cap14-scheda-n">${n}</span>
@@ -4510,9 +4501,13 @@ const App = (() => {
               onclick="App.onCap14ProdRemove('${fieldId}',${gi},${pi})">✕</button>
           </div>
           <div class="cap14-prod-scheda">
-            <span class="cap14-prod-scheda-lbl">Scheda §3.2:</span>
-            <span class="cap14-prod-scheda-cur${schedaCls}">${escHtml(schedaLbl)}</span>
-            <input class="cap14-prod-schedasearch field-input" placeholder="cerca/cambia scheda…"
+            <label class="cap14-prod-use" title="Aggiunge al documento la scheda §3.2 suggerita per questo prodotto">
+              <input type="checkbox" ${hasScheda ? 'checked' : ''}${disabled}
+                onchange="App.onCap14ProdUseSuggested('${fieldId}',${gi},${pi},this.checked)">
+              <span class="cap14-prod-scheda-lbl">Scheda §3.2:</span>
+              <b class="cap14-prod-scheda-cur${hasScheda ? ' set' : ''}">${escHtml(schedaLbl)}</b>
+            </label>
+            <input class="cap14-prod-schedasearch field-input" placeholder="cambia scheda…"
               oninput="App.onCap14ProdSchedaSearch('${fieldId}',${gi},${pi},this.value)">
             <div class="cap14-sr" id="cap14-sr-${fieldId}-${gi}-${pi}"></div>
           </div>
@@ -4614,6 +4609,35 @@ const App = (() => {
       : '<div class="cap14-sr-none">nessuna scheda nel database</div>';
   }
 
+  // Spunta "usa scheda suggerita": aggiunge (o toglie) al documento la scheda
+  // §3.2 corrispondente al prodotto. Unico modo per includere una scheda ora che
+  // la sezione database in basso è stata rimossa (feedback Marco 2026-11-12).
+  function onCap14ProdUseSuggested(fieldId, gi, pi, checked) {
+    const ed = state.formValues[fieldId];
+    const pc = ((ed || {}).gruppi || [])[gi]?.prodotti_chimici?.[pi];
+    if (!pc) return;
+    if (!Array.isArray(ed.schede_db)) ed.schede_db = [];
+    if (checked) {
+      let file = pc.scheda_file, nome = pc.scheda_nome;
+      if (!file) {
+        const m = _c14Match(pc.nome || '', state.chimicoCatalog || []);
+        if (m) { file = m.file; nome = m.nome; }
+      }
+      if (file) {
+        pc.scheda_file = file; pc.scheda_nome = nome;
+        if (!ed.schede_db.includes(file)) ed.schede_db.push(file);
+      }
+    } else {
+      if (pc.scheda_file) {
+        const i = ed.schede_db.indexOf(pc.scheda_file);
+        if (i >= 0) ed.schede_db.splice(i, 1);
+      }
+      pc.scheda_file = ''; pc.scheda_nome = '';
+    }
+    _rerenderCap14Prods(fieldId);
+    saveChapterDraft();
+  }
+
   function onCap14ProdSchedaPick(fieldId, gi, pi, catIdx) {
     const ed = state.formValues[fieldId];
     const pc = ((ed || {}).gruppi || [])[gi]?.prodotti_chimici?.[pi];
@@ -4660,31 +4684,17 @@ const App = (() => {
   }
 
   async function _loadCap14Catalog(fieldId) {
-    const cont = document.getElementById(`cap14-catalog-${fieldId}`);
-    if (!cont) return;
+    // Carica il database schede (per i suggerimenti §3.2 inline) e rigenera i
+    // prodotti. NIENTE auto-spunta: le schede si aggiungono SOLO dalla spunta per
+    // prodotto, in alto (feedback Marco 2026-11-12). La vecchia sezione database
+    // in basso è stata rimossa.
     if (!state.chimicoCatalog) {
       try { state.chimicoCatalog = await call('get_chimico_catalog'); }
       catch (e) { state.chimicoCatalog = []; }
     }
-    const cat = state.chimicoCatalog || [];
     const ed = state.formValues[fieldId] || {};
     if (!Array.isArray(ed.schede_db)) ed.schede_db = [];
-    // Suggerimenti una-tantum: pre-spunta le schede che corrispondono ai prodotti
-    if (!ed._schede_db_seeded) {
-      const sugg = new Set(ed.schede_db);
-      (ed.gruppi || []).forEach(g => (g.prodotti_chimici || []).forEach(pc => {
-        const m = _c14Match(pc.nome || '', cat);
-        if (m) sugg.add(m.file);
-      }));
-      ed.schede_db = [...sugg];
-      ed._schede_db_seeded = true;
-    }
-    if (!cat.length) {
-      cont.innerHTML = '<p class="cap14-note">Database schede non trovato (cartella «14_ Schede prodotti chimici»).</p>';
-      return;
-    }
-    _renderCap14Catalog(fieldId);
-    _rerenderCap14Prods(fieldId);   // ora che il catalogo c'è, mostra le schede suggerite
+    _rerenderCap14Prods(fieldId);   // ora che il catalogo c'è, mostra le suggerite
   }
 
   function _renderCap14Catalog(fieldId) {
@@ -9083,7 +9093,7 @@ const App = (() => {
     pickSchedaValutazione, removeSchedaValutazione,
     onCap14SchedaToggle, onCap14Search,
     onCap14ProdName, onCap14ProdRemove, onCap14ProdAdd,
-    onCap14ProdSchedaSearch, onCap14ProdSchedaPick,
+    onCap14ProdSchedaSearch, onCap14ProdSchedaPick, onCap14ProdUseSuggested,
     // Cap7 editor
     onC7SchedaToggle,
     // Cap17 editor
