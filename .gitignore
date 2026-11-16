@@ -9,6 +9,11 @@ Sorgenti_per_Windows.zip
 # L'app sta nel repo GIA' SCOMPATTATA → lo zip non serve
 Gestione DVR Stone.zip
 
+# Zip di distribuzione dei brand (>100MB): GitHub li rifiuta.
+# L'app sta già scompattata nelle cartelle stone/ ed ecoservizi/
+/stone.zip
+/ecoservizi.zip
+
 # DATI CLIENTI: mai pubblicati (restano nei Documenti di ogni PC)
 # (vale per entrambe le cartelle brand: stone/ ed ecoservizi/)
 **/Supporto DVR Stone/03_Cartella clienti/

@@ -217,13 +217,8 @@ const App = (() => {
     await waitForPywebview();
     _setSplash(25, 'Connessione al motore…');
 
-    // Logo: l'icona stone + wordmark nell'header sono già in HTML (adattano al tema).
-    // Dal backend recuperiamo il logo completo solo per lo splash.
-    const logoB64 = await call('get_logo_base64');
-    if (logoB64) {
-      const splashLogo = document.getElementById('splash-logo');
-      if (splashLogo) splashLogo.src = `data:image/png;base64,${logoB64}`;
-    }
+    // Il logo dello splash è già nell'HTML (web/Logo_stone.png, bundlato) → nessuna
+    // attesa di rete/backend: compare subito (prima a volte tardava).
     _setSplash(45, 'Caricamento risorse…');
 
     // Carica config e aggiorna avatar
@@ -245,16 +240,12 @@ const App = (() => {
     if (!state.clockStarted) { state.clockStarted = true; setInterval(updateClock, 1000); }
     _setSplash(100, 'Pronto');
 
-    // Fade-out splash: attesa minima (la barra riflette i passi reali)
+    // Splash stile AutoCAD: la finestrella frameless col logo resta per un minimo,
+    // poi chiediamo al backend di MOSTRARE la finestra vera dell'app (creata
+    // nascosta e già a piena dimensione) e di chiudere lo splash.
     const elapsed = Date.now() - splashStart;
-    const delay = Math.max(0, 1600 - elapsed);
-    setTimeout(() => {
-      const splash = document.getElementById('splash-screen');
-      if (splash) {
-        splash.classList.add('fade-out');
-        setTimeout(() => splash.remove(), 600);
-      }
-    }, delay);
+    const delay = Math.max(0, 1000 - elapsed);
+    setTimeout(() => { call('app_ready').catch(() => {}); }, delay);
 
     // Notifica (SOLO informativa) se è uscita una nuova versione su GitHub:
     // non scarica nulla, mostra un avviso con il link al repo. Ritardato per
@@ -681,7 +672,6 @@ const App = (() => {
     }
 
     showImportSuccess();
-    _handleSurveyInfo(res);
   }
 
   // La spunta del capitolo è accesa? (default: sì per i clienti template)
@@ -728,59 +718,6 @@ const App = (() => {
       case '10': return fogli.some(f => f.capitolo === 10 || /rumore/i.test(f.file || ''));
       case '11': return fogli.some(f => /vibra|mano brac|corpo intero/i.test(f.file || ''));
       default:   return false;
-    }
-  }
-
-  /* ── Questionari: gestione al caricamento del JSON ─────────────────── */
-  function _handleSurveyInfo(res) {
-    const s = res.survey;
-    if (!s || !s.attivo) return;
-    if (s.needs_email) {
-      // L'email del cliente non è nel JSON → è l'unica cosa da chiedere
-      _askSurveyEmail(res.path, res.name);
-    } else {
-      toast(`Questionario iniziale in invio a ${s.email}`, 'info');
-    }
-  }
-
-  function _askSurveyEmail(jsonPath, clientName) {
-    const old = document.getElementById('survey-email-overlay');
-    if (old) old.remove();
-    const ov = document.createElement('div');
-    ov.id = 'survey-email-overlay';
-    ov.className = 'survey-email-overlay';
-    ov.innerHTML = `
-      <div class="survey-email-card">
-        <h3>Email del cliente</h3>
-        <p>Il file JSON di <b>${escHtml(clientName)}</b> contiene i questionari da
-        inviare al cliente, ma non la sua email. Inseriscila per attivare
-        l'invio automatico (iniziale subito, qualità a 7 giorni dall'export).</p>
-        <input type="email" id="survey-email-input" placeholder="es. cliente@azienda.it"
-          autocomplete="off" spellcheck="false">
-        <div class="survey-email-actions">
-          <button class="btn btn-ghost" onclick="document.getElementById('survey-email-overlay').remove()">Più tardi</button>
-          <button class="btn btn-primary" onclick="App.confirmSurveyEmail('${escAttr(jsonPath)}')">Attiva invio</button>
-        </div>
-      </div>`;
-    document.body.appendChild(ov);
-    setTimeout(() => document.getElementById('survey-email-input')?.focus(), 100);
-  }
-
-  async function confirmSurveyEmail(jsonPath) {
-    const inp = document.getElementById('survey-email-input');
-    const email = (inp?.value || '').trim();
-    if (!email || !email.includes('@')) {
-      toast('Inserire un indirizzo email valido', 'error');
-      return;
-    }
-    const res = await call('registra_survey_email', jsonPath, email);
-    document.getElementById('survey-email-overlay')?.remove();
-    if (res?.ok) {
-      toast(`Questionari attivati: invio a ${email}`, 'success');
-      // Aggiorna il banner se siamo sulla schermata di quel cliente
-      if (state.currentClient?.json_path === jsonPath) {
-        _renderSurveyBanner(state.currentClient);
-      }
     }
   }
 
@@ -834,7 +771,6 @@ const App = (() => {
 
     state.freshImport = true;
     _renderTemplateToggle(client);      // spunta "Usa i dati del template"
-    _renderSurveyBanner(client);        // conferma questionari anche dopo l'import
     await renderChaptersList(client, true);
     _renderDvrTypeBar(client);
     setClientSection('menu');
@@ -895,7 +831,6 @@ const App = (() => {
     if (heroFill) setTimeout(() => { heroFill.style.width = `${pct}%`; }, 80);
 
     _renderTemplateToggle(client);
-    _renderSurveyBanner(client);
     _renderClientSteps(client, done, TOTAL_CAP);
     _renderChapterFilterBar(client);
     renderChaptersList(client, true);   // anima solo all'ingresso nella vista
@@ -959,17 +894,10 @@ const App = (() => {
          <span class="dvr-btn-tt">${v.label}</span><small>${v.note}</small>
        </button>`
     ).join('');
-    const cap2Semp = !!client.cap2_semplificato;
     bar.innerHTML =
       `<div class="dvr-type-head"><span>Tipo di DVR</span>${detHtml}
          <button class="dvr-type-collapse" onclick="App.toggleDvrType()" title="Comprimi">${_CHEVRON_UP}</button></div>
-       <div class="dvr-type-opts">${btns}</div>
-       <label class="dvr-cap2-simp" title="Usa il Capitolo 2 nella variante per ristoranti, negozi e uffici (schede §3 senza compressori e carrelli elevatori)">
-         <input type="checkbox" ${cap2Semp ? 'checked' : ''}
-                onchange="App.onToggleCap2Semplificato(this.checked)">
-         <span>Cap&nbsp;2 semplificato
-           <small>ristoranti / negozi / uffici — senza compressori e carrelli elevatori</small></span>
-       </label>`;
+       <div class="dvr-type-opts">${btns}</div>`;
     bar.style.display = '';
   }
 
@@ -992,8 +920,9 @@ const App = (() => {
   async function onPickTipoDvr(tipo) {
     if (!state.currentClient || !DVR_TYPES[tipo]) return;
     state.currentClient.tipo_dvr = tipo;
-    // Nelle sezioni dove il selettore è compatto, dopo la scelta si richiude.
-    if (state.clientSection !== 'allegati' && state.clientSection !== 'menu') {
+    // Dopo la scelta del tipo il selettore si richiude (con animazione) per non
+    // occupare spazio, in tutti gli elementi del DVR.
+    if (DVR_SECTIONS.includes(state.clientSection)) {
       state.dvrTypeExpanded = false;
     }
     _renderDvrTypeBar(state.currentClient);
@@ -1022,7 +951,8 @@ const App = (() => {
   function setClientSection(name) {
     const panes = {
       menu: 'sec-menu', capitoli: 'sec-capitoli', allegati: 'sec-allegati',
-      haccp: 'sec-haccp', piano: 'sec-piano', lettera: 'sec-lettera',
+      haccp: 'sec-haccp', ras: 'sec-ras', piano: 'sec-piano', lettera: 'sec-lettera',
+      cantieri: 'sec-cantieri', commerciale: 'sec-commerciale',
     };
     Object.entries(panes).forEach(([sec, id]) => {
       const el = document.getElementById(id);
@@ -1035,14 +965,41 @@ const App = (() => {
       t.classList.toggle('cx-tab--active', t.dataset.sec === name);
     });
     state.clientSection = name;
-    // Il selettore Tipo DVR resta CONTRATTO ovunque (anche in Allegati e Piano):
-    // è l'utente a espanderlo se serve. Esteso solo sul menu iniziale (dove si
-    // sceglie il tipo). Feedback 2026-11-04.
-    state.dvrTypeExpanded = (name === 'menu');
-    if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+    // Il selettore Tipo DVR e le 3 fasi (Controlla dati / Compila capitoli /
+    // Genera DVR) compaiono SOLO dentro un elemento del DVR (Capitoli, Allegati,
+    // Piano, Lettera), NON sul menu "Cosa vuoi gestire?" né su HACCP/RAS.
+    // Feedback 2026-11-14. All'ingresso il Tipo DVR è espanso; si comprime con
+    // animazione appena si sceglie il tipo o appena si scorre la pagina.
+    const inDvr = DVR_SECTIONS.includes(name);
+    const bar = document.getElementById('dvr-type-bar');
+    const steps = document.getElementById('cd-steps');
+    if (steps) steps.style.display = inDvr ? '' : 'none';
+    if (inDvr) {
+      state.dvrTypeExpanded = true;
+      if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+      _armDvrScrollCollapse();
+    } else if (bar) {
+      bar.style.display = 'none';
+    }
     if (name === 'allegati') _renderAllegatiIndex();
     if (name === 'piano') _renderPianoSection();
     if (name === 'lettera') _renderLetteraSection();
+  }
+
+  const DVR_SECTIONS = ['capitoli', 'allegati', 'piano', 'lettera'];
+
+  // Collassa il selettore Tipo DVR (da esteso a chip) appena si scorre la pagina,
+  // così non occupa spazio mentre si lavora. Listener unico in cattura (prende
+  // anche gli scroll annidati). Si attiva solo dentro un elemento del DVR.
+  function _armDvrScrollCollapse() {
+    if (state._dvrScrollArmed) return;
+    state._dvrScrollArmed = true;
+    window.addEventListener('scroll', () => {
+      if (!state.dvrTypeExpanded) return;
+      if (!DVR_SECTIONS.includes(state.clientSection)) return;
+      state.dvrTypeExpanded = false;
+      if (state.currentClient) _renderDvrTypeBar(state.currentClient);
+    }, true);
   }
 
   async function generaAllegati() {
@@ -1687,53 +1644,6 @@ const App = (() => {
     await startChapter(String(cid), null);
   }
 
-  async function _renderSurveyBanner(client) {
-    const banner = document.getElementById('cd-survey-banner');
-    if (!banner) return;
-    banner.style.display = 'none';
-    banner.innerHTML = '';
-    if (!client?.json_path) return;
-    const st = await call('get_survey_status_for', client.json_path);
-    if (!st || !st.attivo) return;
-    const parts = (st.voci || []).map(v => {
-      const nome = v.tipo === 'qualita' ? 'Questionario di qualità' : 'Questionario iniziale';
-      if (v.stato === 'inviata') {
-        const d = v.inviata_il ? ' il ' + new Date(v.inviata_il).toLocaleDateString('it-IT') : '';
-        return `<span class="cd-sv ok">✓ ${nome} inviato a ${escHtml(v.email)}${d}</span>`;
-      }
-      if (!v.email) {
-        return `<span class="cd-sv warn">⚠ ${nome}: manca l'email del cliente
-          <button class="cd-sv-btn" onclick="App.askSurveyEmailForClient()">Inserisci email</button></span>`;
-      }
-      const prev = v.invia_dopo
-        ? ' (previsto per il ' + new Date(v.invia_dopo).toLocaleDateString('it-IT') + ')' : '';
-      const err = v.ultimo_errore ? ' — errore: ' + escHtml(v.ultimo_errore).slice(0, 50) : '';
-      return `<span class="cd-sv wait">⏳ ${nome} in attesa d'invio${prev}${err}</span>`;
-    });
-    banner.innerHTML = parts.join('');
-    banner.style.display = 'flex';
-
-    // L'invio iniziale parte in un thread in background: se una voce è ancora
-    // "in attesa" con email e SMTP configurato, ricontrolla una volta dopo poco
-    // così il badge passa da "in attesa" a "inviato" senza riaprire la schermata.
-    const daAggiornare = st.configurato &&
-      (st.voci || []).some(v => v.stato !== 'inviata' && v.email);
-    if (daAggiornare && !banner._pendingRefresh) {
-      banner._pendingRefresh = true;
-      setTimeout(() => {
-        banner._pendingRefresh = false;
-        if (state.currentClient?.json_path === client.json_path) {
-          _renderSurveyBanner(client);
-        }
-      }, 2500);
-    }
-  }
-
-  function askSurveyEmailForClient() {
-    const c = state.currentClient;
-    if (c?.json_path) _askSurveyEmail(c.json_path, c.name);
-  }
-
   function toggleShowExcluded() {
     state.showExcluded = !state.showExcluded;
     if (state.currentClient) renderChaptersList(state.currentClient);
@@ -2058,7 +1968,8 @@ const App = (() => {
       const hasPrev = idx > 0;
       const hasNext = idx < active.length - 1;
       const nextLabel = hasNext ? 'Prossimo Capitolo →' : 'Fine — Torna alla Lista ✓';
-      const hasFogli = ['6', '7', '10', '11'].includes(String(chapterId));
+      // Cap6 è ora internalizzato (nessun Excel) → niente tasto "Apri fogli Excel".
+      const hasFogli = ['7', '10', '11'].includes(String(chapterId));
       const btnFogli = hasFogli ? `
         <button class="btn btn-ghost" id="btn-fogli-xls" onclick="App.apriFogliCalcolo('${chapterId}')"
           title="Apre in Excel i fogli di calcolo del capitolo (schede/gruppi selezionati)">
@@ -2698,7 +2609,9 @@ const App = (() => {
       wrap.setAttribute('data-field-id', fd.id);
       const cap6Data = (prefill[fd.id] || state.tablePrefill[fd.id] || {});
       initCap6Editor(fd.id, cap6Data);
-      wrap.innerHTML = buildCap6Editor(fd.id, cap6Data);
+      wrap.innerHTML = buildCap6Editor(fd.id, cap6Data)
+        + `<div id="cap6-native-${fd.id}" class="cap6-native"><div class="cap14-note">Caricamento schede di calcolo…</div></div>`;
+      setTimeout(() => _loadCap6Native(fd.id), 0);
 
     } else if (fd.type === 'cap20_editor') {
       wrap.style.gridColumn = '1 / -1';
@@ -2719,7 +2632,9 @@ const App = (() => {
       wrap.setAttribute('data-field-id', fd.id);
       const cap7Data = (prefill[fd.id] || state.tablePrefill[fd.id] || {});
       initCap7Editor(fd.id, cap7Data);
-      wrap.innerHTML = buildCap7Editor(fd.id, cap7Data);
+      wrap.innerHTML = buildCap7Editor(fd.id, cap7Data)
+        + `<div id="cap7-native-${fd.id}" class="cap6-native"><div class="cap14-note">Caricamento schede OCRA…</div></div>`;
+      setTimeout(() => _loadCap7Native(fd.id), 0);
 
     } else if (fd.type === 'cap11_editor') {
       wrap.style.gridColumn = '1 / -1';
@@ -3336,10 +3251,20 @@ const App = (() => {
   ];
 
   function buildCap2Editor(fieldId, gruppi) {
+    // Spunta Cap2 semplificato (ristoranti/negozi/uffici) — proprio nel Cap2 così
+    // non si perde (feedback Marco 2026-11-13). Stato per-cliente.
+    const simp = !!(state.currentClient && state.currentClient.cap2_semplificato);
+    const toggle = `
+      <label class="cap2-simp-toggle" title="Usa il Capitolo 2 nella variante per ristoranti, negozi e uffici (schede §3 senza compressori e carrelli elevatori)">
+        <input type="checkbox" ${simp ? 'checked' : ''}
+               onchange="App.onToggleCap2Semplificato(this.checked)">
+        <span><b>Capitolo 2 semplificato</b> — ristoranti / negozi / uffici
+          <small>schede §3 senza compressori e carrelli elevatori</small></span>
+      </label>`;
     if (!gruppi || gruppi.length === 0) {
-      return `<div class="cap2-no-data">Nessun gruppo omogeneo trovato nel JSON.</div>`;
+      return toggle + `<div class="cap2-no-data">Nessun gruppo omogeneo trovato nel JSON.</div>`;
     }
-    return gruppi.map((g, gi) => buildCap2Group(fieldId, g, gi)).join('');
+    return toggle + gruppi.map((g, gi) => buildCap2Group(fieldId, g, gi)).join('');
   }
 
   function buildCap2Group(fieldId, g, gi) {
@@ -5908,7 +5833,16 @@ const App = (() => {
 
   function _c6Rerender(fieldId) {
     const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
-    if (outer) outer.innerHTML = buildCap6Editor(fieldId, state.formValues[fieldId]);
+    if (!outer) return;
+    // IMPORTANTE: ri-monta ANCHE il box delle schede native, altrimenti un
+    // rerender (catalogo MMC caricato in async, toggle varianti) cancella le
+    // schede di calcolo e la maschera resta "vuota" finché non si riesce.
+    outer.innerHTML = buildCap6Editor(fieldId, state.formValues[fieldId])
+      + `<div id="cap6-native-${fieldId}" class="cap6-native"><div class="cap14-note">Caricamento schede di calcolo…</div></div>`;
+    // Se le schede sono già in memoria, ridisegna da lì (preserva modifiche non
+    // ancora salvate); altrimenti ricarica dal backend.
+    if (Array.isArray(state.cap6Schede)) setTimeout(() => _renderCap6Native(fieldId), 0);
+    else setTimeout(() => _loadCap6Native(fieldId), 0);
   }
 
   // Nomi dei gruppi omogenei realmente presenti nel JSON (ciclo_lavoro).
@@ -6116,25 +6050,100 @@ const App = (() => {
     return `<div class="c6-info">${_gruppoInfoHead(raw, 'Rischio movimenti ripetitivi segnalato', hasRisk)}${evalHtml}</div>`;
   }
 
+  /* Approccio MMC del JSON (speculare al backend _cap6_modalita):
+     'template' | 'approfondita' (valutazione libera) | 'misto' | 'vuoto'. */
+  function _cap6Modalita() {
+    const mmc = (state.jsonRaw && state.jsonRaw.mmc) || {};
+    const vals = new Set();
+    const modal = mmc.modalita_gruppi;
+    if (modal && typeof modal === 'object') {
+      Object.values(modal).forEach(v => vals.add(String(v).trim().toLowerCase()));
+    }
+    (mmc.valutazioni_gruppi || []).forEach(vg => {
+      const t = String((vg && vg.tipo_valutazione) || '').trim().toLowerCase();
+      if (t) vals.add(t);
+    });
+    const hasSchede = Array.isArray(mmc.schede) && mmc.schede.length > 0;
+    const hasTemplate = vals.has('template');
+    const hasAppro = ['approfondita', 'libera', 'completa', 'approfondito'].some(k => vals.has(k)) || hasSchede;
+    if (hasTemplate && hasAppro) return 'misto';
+    if (hasTemplate) return 'template';
+    if (hasAppro) return 'approfondita';
+    if (Array.isArray(mmc.gruppi_selezionati) && mmc.gruppi_selezionati.length) return 'template';
+    return 'vuoto';
+  }
+
+  // Banner "approccio" a tendina: 2 righe di riassunto SEMPRE visibili + una
+  // spiegazione approfondita (per un tecnico nuovo) dentro un <details>.
+  function _apprBanner(cls, badge, summary, moreHtml) {
+    return `<details class="appr-box appr-box--${cls}">
+      <summary class="appr-head">
+        <span class="appr-badge">${badge}</span>
+        <span class="appr-sum">${summary}</span>
+        <span class="appr-caret" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </span>
+      </summary>
+      <div class="appr-more">${moreHtml}</div>
+    </details>`;
+  }
+
+  function _cap6Banner(mod) {
+    if (mod === 'approfondita') {
+      return _apprBanner('libera', 'Valutazione libera',
+        'Il tecnico esterno ha svolto la valutazione completa <b>a mano</b>: i dati sono già nel file. Le schede di calcolo qui sotto sono precompilate con quei dati.',
+        `<p><b>Cosa significa.</b> Per la movimentazione manuale dei carichi, il tecnico che ha fatto il sopralluogo ha misurato i carichi reali (peso, altezze, distanze, frequenza dei gesti, durata del turno) e li ha inseriti nel file del cliente.</p>
+         <p><b>Cosa devi fare tu.</b> Controlla le schede di calcolo qui sotto: alcuni fattori sono già impostati dai dati del tecnico, altri (altezza delle mani, angolo di torsione, giudizio sulla presa…) il software non può ricavarli dal file e partono da un valore di default — correggili dove serve. L'indice di sollevamento (NIOSH) e l'esito del trasporto si aggiornano dal vivo.</p>
+         <p><b>Cosa succede in automatico.</b> In fase di esportazione le schede vengono disegnate in modo nativo dentro il Word del DVR, senza aprire Excel.</p>`);
+    }
+    if (mod === 'template') {
+      return _apprBanner('template', 'Valutazione a modelli',
+        'Il tecnico esterno ha indicato <b>attività standard</b>: scegli qui sotto i modelli di movimentazione corrispondenti. I calcoli sono già pronti nei modelli.',
+        `<p><b>Cosa significa.</b> Il tecnico del sopralluogo non ha misurato ogni singolo gesto, ma ha indicato il <i>tipo</i> di attività svolta (es. «sollevamento scatole», «trasporto sacchi»).</p>
+         <p><b>Cosa devi fare tu.</b> Apri ogni gruppo omogeneo e seleziona, dal catalogo, i modelli che corrispondono alle attività reali del cliente. Ogni modello contiene già un foglio di calcolo validato (NIOSH per il sollevamento, massa cumulativa per il trasporto). Puoi scegliere più modelli per lo stesso gruppo.</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione il software legge i valori dal modello e disegna le schede di calcolo direttamente nel Word, senza aprire Excel.</p>`);
+    }
+    if (mod === 'misto') {
+      return _apprBanner('misto', 'Valutazione mista',
+        'Alcuni gruppi a <b>modelli di catalogo</b>, altri a <b>valutazione libera</b>. Gestisci qui sotto i gruppi a modelli; gli altri sono già compilati.',
+        `<p><b>Cosa significa.</b> Il tecnico esterno ha usato approcci diversi a seconda del gruppo omogeneo: per alcuni ha scelto modelli standard, per altri ha svolto la valutazione completa a mano.</p>
+         <p><b>Cosa devi fare tu.</b> Usa la maschera di selezione qui sotto per i gruppi a modelli di catalogo; le schede dei gruppi a valutazione libera sono già compilate con i dati del tecnico (controllale).</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione tutte le schede vengono disegnate in modo nativo nel Word, senza Excel.</p>`);
+    }
+    return _apprBanner('vuoto', 'Nessun dato',
+      'Il file di questo cliente non contiene dati di <b>movimentazione manuale dei carichi</b> per questo capitolo.',
+      `<p>Il tecnico esterno non ha compilato la sezione sulla movimentazione manuale dei carichi. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede di calcolo. Se invece il rischio c'è, va richiesta al tecnico la valutazione.</p>`);
+  }
+
   function buildCap6Editor(fieldId, data) {
+    const mod = _cap6Modalita();
+    const banner = _cap6Banner(mod);
+
+    // VALUTAZIONE LIBERA: la maschera di catalogo NON deve comparire. Le schede
+    // di calcolo (box nativo qui sotto) sono costruite dai dati del tecnico.
+    if (mod === 'approfondita') {
+      return `<div class="c6-editor" id="c6-editor-${fieldId}">${banner}</div>`;
+    }
+
     const ed = state.formValues[fieldId] || { gruppi: [] };
     const gruppi = ed.gruppi || [];
     const cat = state.mmcCatalog;
 
     if (!Array.isArray(cat)) {
-      return `<div class="c6-editor"><div class="c6-empty">Caricamento catalogo movimentazioni…</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Caricamento catalogo movimentazioni…</div></div>`;
     }
     if (!cat.length) {
-      return `<div class="c6-editor"><div class="c6-empty">Catalogo MMC non trovato nella cartella dei modelli (sottocartella <code>MMC/</code>). Controlla la cartella dei template.</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Catalogo MMC non trovato nella cartella dei modelli (sottocartella <code>MMC/</code>). Controlla la cartella dei template.</div></div>`;
     }
     if (!gruppi.length) {
-      return `<div class="c6-editor"><div class="c6-empty">Nessun gruppo omogeneo nel JSON del cliente: non è possibile assegnare le movimentazioni.</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Nessun gruppo omogeneo nel JSON del cliente: non è possibile assegnare le movimentazioni.</div></div>`;
     }
 
     const totSchede = gruppi.reduce((a, g) =>
       a + (g.movimentazioni || []).reduce((b, m) => b + (m.varianti || []).length, 0), 0);
 
     return `<div class="c6-editor" id="c6-editor-${fieldId}">
+      ${banner}
       <div class="c6-intro">Apri ogni <b>gruppo omogeneo</b>: sotto trovi le <b>informazioni scritte dal tecnico esterno</b> (mansione, attività, addetti e i carichi valutati) per aiutarti a scegliere. In base a queste, seleziona le <b>movimentazioni</b> svolte e, per ciascuna, le <b>varianti demografiche</b> (sesso ed età). Ogni variante genera una scheda di valutazione (n° <b>N-S</b>); ogni movimentazione un foglio di calcolo del trasporto (n° <b>N-T</b>).</div>
       ${gruppi.map((g, gi) => _buildC6Gruppo(fieldId, gi, g, cat)).join('')}
       <div class="c6-tot">Totale: <b>${totSchede}</b> scheda/e di valutazione selezionata/e</div>
@@ -6191,6 +6200,323 @@ const App = (() => {
     }
     _c6Rerender(fieldId);
     saveChapterDraft();
+  }
+
+  /* ── Cap6 — Schede di calcolo NATIVE (NIOSH, senza Excel) ──────────────── */
+  async function _loadCap6Native(fieldId) {
+    const box = document.getElementById(`cap6-native-${fieldId}`);
+    if (!box) return;
+    const jp = state.currentClient?.json_path;
+    if (!jp) { box.innerHTML = ''; return; }
+    let r;
+    try { r = await call('get_cap6_schede', jp); } catch (e) { r = null; }
+    if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
+    state.cap6Tables = r.tables || {};
+    state.cap6Schede = r.schede || [];
+    _renderCap6Native(fieldId);
+  }
+
+  function _renderCap6Native(fieldId) {
+    const box = document.getElementById(`cap6-native-${fieldId}`);
+    if (!box) return;
+    const schede = state.cap6Schede || [];
+    if (!schede.length) {
+      const mod = _cap6Modalita();
+      if (mod === 'template' || mod === 'misto') {
+        box.innerHTML = `<div class="cap2-section-label">Schede di calcolo</div>
+          <p class="cap14-note">Approccio <b>template</b>: le schede di calcolo vengono lette dai modelli del catalogo e <b>disegnate in modo nativo all'esportazione</b> (nessun Excel). Seleziona movimentazioni e varianti qui sopra.</p>`;
+      } else {
+        box.innerHTML = `<div class="cap2-section-label">Schede di calcolo</div>
+          <p class="cap14-note">Nessuna scheda MMC nel JSON del cliente (sezione <code>mmc.schede</code>).</p>`;
+      }
+      return;
+    }
+    // Raggruppa le schede per GRUPPO OMOGENEO, conservando l'indice originale
+    // (serve agli handler). Tutti i gruppi vengono mostrati, anche se è uno solo.
+    const groups = [];
+    const byKey = new Map();
+    schede.forEach((s, i) => {
+      const key = (s.gruppo || '').trim() || '—';
+      let g = byKey.get(key);
+      if (!g) { g = { nome: (s.gruppo || '').trim(), items: [] }; byKey.set(key, g); groups.push(g); }
+      g.items.push({ s, i });
+    });
+    const groupsHtml = groups.map((g, gi) => `
+      <section class="c6n-group">
+        <header class="c6n-group-hdr">
+          <span class="c6n-group-tag">Gruppo ${gi + 1}</span>
+          <span class="c6n-group-nome">${escHtml(g.nome || 'Gruppo omogeneo')}</span>
+          <span class="c6n-group-badge">${g.items.length} scheda/e</span>
+        </header>
+        <div class="c6n-group-body">
+          ${g.items.map(({ s, i }) => s.tipo === 'T' ? _cap6SchedaTHtml(s, i) : _cap6SchedaSHtml(s, i)).join('')}
+        </div>
+      </section>`).join('');
+
+    box.innerHTML = `<div class="cap2-section-label">Schede di calcolo — MMC (calcolo nel software, esportate come tabella nel Word)</div>
+      ${groupsHtml}
+      <div class="c6n-misure-bar">
+        <button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.openCap6Misure()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Misure di prevenzione e protezione</button>
+        <span class="cap14-note">Valgono per tutte le schede di tutti i gruppi: verranno spuntate nel modello SCHEDA MOVIMENTAZIONE CARICHI.</span>
+      </div>`;
+  }
+
+  // ── Maschera MISURE di prevenzione/protezione (SCHEDA MOVIMENTAZIONE) ──
+  async function openCap6Misure() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    let r;
+    try { r = await call('get_cap6_misure', jp); } catch (e) { r = null; }
+    if (!r || !r.ok) { toast(r?.error || 'Misure non disponibili', 'err'); return; }
+    state.cap6Misure = { catalogo: r.catalogo || [], movimentazioni: r.movimentazioni || [] };
+    _renderCap6MisureModal();
+  }
+
+  function _c6mSelOf(mov) {
+    // selezione corrente per una movimentazione, come mappa key→bool|array
+    const m = (state.cap6Misure.movimentazioni || []).find(x => String(x.mov) === String(mov));
+    return (m && m.selezione) || {};
+  }
+
+  function _cap6MisCatHtml(mov, cat, sel) {
+    const v = sel[cat.key];
+    const hasSubs = (cat.sottovoci || []).length > 0;
+    const mainOn = Array.isArray(v) ? v.length > 0 : !!v;
+    const subsSel = Array.isArray(v) ? v : [];
+    const subsHtml = (cat.sottovoci || []).map((t, idx) =>
+      `<label class="c6m-sub"><input type="checkbox" data-mov="${escAttr(mov)}" data-key="${cat.key}" data-sub="${idx}"
+         ${subsSel.includes(idx) ? 'checked' : ''} onchange="App.onCap6MisSub('${escAttr(mov)}','${cat.key}')">
+        <span>${escHtml(t)}</span></label>`).join('');
+    return `<div class="c6m-cat">
+      <label class="c6m-main"><input type="checkbox" data-mov="${escAttr(mov)}" data-key="${cat.key}" data-sub="main"
+          ${mainOn ? 'checked' : ''} onchange="App.onCap6MisMain('${escAttr(mov)}','${cat.key}')">
+        <span class="c6m-cat-tag">${escHtml(cat.categoria)}</span>
+        <span class="c6m-cat-txt">${escHtml(cat.testo)}</span></label>
+      ${hasSubs ? `<div class="c6m-subs">${subsHtml}</div>` : ''}
+    </div>`;
+  }
+
+  function _cap6MisMovHtml(m) {
+    const cat = state.cap6Misure.catalogo || [];
+    const sel = m.selezione || {};
+    const li = (m.li === null || m.li === undefined) ? '—' : (Math.round(m.li * 100) / 100);
+    return `<section class="c6m-mov" data-mov="${escAttr(m.mov)}">
+      <header class="c6m-mov-h">Scheda n. ${m.num} — ${escHtml(m.gruppo || '')}
+        ${m.descrizione ? '· ' + escHtml(m.descrizione) : ''} <span class="c6m-li">LI ${li}</span></header>
+      ${cat.map(c => _cap6MisCatHtml(m.mov, c, sel)).join('')}
+    </section>`;
+  }
+
+  function _renderCap6MisureModal() {
+    document.getElementById('c6m-overlay')?.remove();
+    const movs = state.cap6Misure.movimentazioni || [];
+    const body = movs.length
+      ? movs.map(_cap6MisMovHtml).join('')
+      : '<p class="cap14-note">Nessuna movimentazione MMC nel JSON.</p>';
+    const ov = document.createElement('div');
+    ov.id = 'c6m-overlay';
+    ov.className = 'c6m-overlay';
+    ov.innerHTML = `<div class="c6m-dialog">
+      <div class="c6m-top">
+        <h2>Misure di prevenzione e protezione</h2>
+        <div class="c6m-top-actions">
+          <button type="button" class="btn c6m-btn-ghost" onclick="App.closeCap6Misure()">Annulla</button>
+          <button type="button" class="btn btn-success" onclick="App.saveCap6Misure()">Salva e chiudi</button>
+        </div>
+      </div>
+      <div class="c6m-scroll">${body}</div>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+
+  function onCap6MisMain(mov, key) {
+    const ov = document.getElementById('c6m-overlay'); if (!ov) return;
+    const main = ov.querySelector(`input[data-mov="${CSS.escape(String(mov))}"][data-key="${key}"][data-sub="main"]`);
+    if (!main) return;
+    // se spengo il principale, spengo le sotto-voci
+    if (!main.checked) {
+      ov.querySelectorAll(`input[data-mov="${CSS.escape(String(mov))}"][data-key="${key}"]:not([data-sub="main"])`)
+        .forEach(cb => { cb.checked = false; });
+    }
+  }
+
+  function onCap6MisSub(mov, key) {
+    const ov = document.getElementById('c6m-overlay'); if (!ov) return;
+    const subs = ov.querySelectorAll(`input[data-mov="${CSS.escape(String(mov))}"][data-key="${key}"]:not([data-sub="main"])`);
+    const any = Array.from(subs).some(cb => cb.checked);
+    const main = ov.querySelector(`input[data-mov="${CSS.escape(String(mov))}"][data-key="${key}"][data-sub="main"]`);
+    if (main && any) main.checked = true;   // una sotto-voce attiva → principale ON
+  }
+
+  function closeCap6Misure() { document.getElementById('c6m-overlay')?.remove(); }
+
+  async function saveCap6Misure() {
+    const ov = document.getElementById('c6m-overlay'); if (!ov) return;
+    const cat = state.cap6Misure.catalogo || [];
+    const subKeys = new Set(cat.filter(c => (c.sottovoci || []).length).map(c => c.key));
+    const selezione = {};
+    (state.cap6Misure.movimentazioni || []).forEach(m => {
+      const mv = String(m.mov);
+      const out = {};
+      cat.forEach(c => {
+        const main = ov.querySelector(`input[data-mov="${CSS.escape(mv)}"][data-key="${c.key}"][data-sub="main"]`);
+        const on = main && main.checked;
+        if (subKeys.has(c.key)) {
+          const subs = Array.from(ov.querySelectorAll(`input[data-mov="${CSS.escape(mv)}"][data-key="${c.key}"]:not([data-sub="main"])`))
+            .filter(cb => cb.checked).map(cb => parseInt(cb.getAttribute('data-sub'), 10));
+          if (subs.length) out[c.key] = subs;
+          else if (on) out[c.key] = true;   // principale senza sotto-voci specifiche
+        } else if (on) {
+          out[c.key] = true;
+        }
+      });
+      selezione[mv] = out;
+      // tiene allineata la selezione in memoria
+      m.selezione = out;
+    });
+    const jp = state.currentClient?.json_path;
+    try {
+      const r = await call('salva_cap6_misure', jp, selezione);
+      if (r && r.ok) { toast('Misure salvate', 'ok'); closeCap6Misure(); }
+      else toast(r?.error || 'Errore nel salvataggio', 'err');
+    } catch (e) { toast('Errore nel salvataggio', 'err'); }
+  }
+
+  function _cap6Sel(i, key, tableKey, cur, label) {
+    const tab = (state.cap6Tables || {})[tableKey] || [];
+    const opts = tab.map((o, idx) =>
+      `<option value="${idx}"${idx === cur ? ' selected' : ''}>${escHtml(String(o[0]))} (${o[1]})</option>`).join('');
+    // Cella fattore: etichetta sopra (in navy), selettore sotto. Ogni cella è un
+    // riquadro a sé nella griglia (staccate), look pulito come la versione precedente.
+    return `<label class="c6n-f"><span>${escHtml(label)}</span>
+      <select onchange="App.onCap6Sel(${i},'${key}',this.value)">${opts}</select></label>`;
+  }
+
+  function _cap6ResSInner(rwl, idx) {
+    const cls = (idx !== null && idx <= 1) ? 'ok' : 'ko';
+    return `<span class="c6n-res-k">Peso limite raccomandato</span> <b class="c6n-res-v">${rwl} kg</b>
+      <span class="c6n-res-dot">·</span>
+      <span class="c6n-res-k">Indice di sollevamento</span> <b class="c6n-idx ${cls}">${idx === null ? '—' : idx}</b>`;
+  }
+
+  function _cap6ResTInner(r) {
+    return `<span class="c6n-res-k">Massa trasportata</span> <b class="c6n-res-v">${r.trasp} kg</b>
+      <span class="c6n-res-dot">·</span>
+      <span class="c6n-res-k">Limite</span> <b class="c6n-res-v">${r.lim} kg</b>
+      <span class="c6n-res-dot">·</span>
+      <b class="c6n-idx ${r.ok ? 'ok' : 'ko'}">${r.ok ? 'ACCETTABILE' : 'NON ACCETTABILE'}</b>`;
+  }
+
+  function _cap6RwlJs(s) {
+    const T = state.cap6Tables || {};
+    const eta = (s.eta === '20-45') ? '20-45' : 'altro';
+    const sesso = String(s.sesso || 'M').toUpperCase().startsWith('M') ? 'M' : 'F';
+    const cp = (T.CP && T.CP[`${sesso}|${eta}`]) || 0;
+    const pick = (k, key) => { const r = (T[k] || [])[s.sel?.[key] ?? 0]; return r ? +r[1] : 0; };
+    const fm = (T.FM && T.FM[s.fm_durata]) ? +T.FM[s.fm_durata][s.fm_freq_idx] : 0;
+    const rwl = cp * pick('VM', 'VM') * pick('DM', 'DM') * pick('HM', 'HM') * pick('AM', 'AM')
+      * pick('CM', 'CM') * fm * pick('OM', 'OM') * pick('PM', 'PM');
+    return Math.round(rwl * 100) / 100;
+  }
+
+  function _cap6TraspJs(s) {
+    const T = state.cap6Tables || {};
+    const pick = (k, key) => { const r = (T[k] || [])[s.sel?.[key] ?? 0]; return r ? +r[1] : 0; };
+    const trasp = (+s.peso || 0) * (+s.sollevamenti_min || 0) * (+s.ore_turno || 0) * 60;
+    const lim = pick('MCUM', 'MCUM') * pick('T_DIST', 'DIST') * pick('T_POS', 'POS');
+    return { trasp: Math.round(trasp * 10) / 10, lim: Math.round(lim * 10) / 10, ok: (lim > 0 && trasp <= lim) };
+  }
+
+  function _cap6SchedaSHtml(s, i) {
+    const rwl = _cap6RwlJs(s);
+    const idx = rwl > 0 ? Math.round((+s.peso || 0) / rwl * 100) / 100 : null;
+    const idxCls = (idx !== null && idx <= 1) ? 'ok' : 'ko';
+    const T = state.cap6Tables || {};
+    const freqLbl = (T.FM_FREQ || [])[s.fm_freq_idx];
+    return `<div class="c6n-scheda" data-i="${i}">
+      <div class="c6n-hdr">
+        <span class="c6n-hdr-n">Scheda ${escHtml(s.n)}</span>
+        <span class="c6n-hdr-t">Sollevamento / abbassamento</span>
+        <span class="c6n-sex">${escHtml(s.sesso)} · ${escHtml(s.eta)}</span>
+      </div>
+      <div class="c6n-row2">
+        <label class="c6n-f c6n-wide"><span>Descrizione attività</span>
+          <input type="text" value="${escAttr(s.descrizione || '')}" onchange="App.onCap6Field(${i},'descrizione',this.value)"></label>
+        <label class="c6n-f"><span>Carico</span>
+          <input type="text" value="${escAttr(s.carico || '')}" onchange="App.onCap6Field(${i},'carico',this.value)"></label>
+        <label class="c6n-f"><span>Peso effettivo (kg)</span>
+          <input type="number" value="${escAttr(s.peso ?? '')}" onchange="App.onCap6Field(${i},'peso',this.value)"></label>
+      </div>
+      <div class="c6n-note">Frequenza/durata (dal JSON): <b>${escHtml(String(freqLbl))}</b> azioni/min · ${escHtml(s.fm_durata)}</div>
+      <div class="c6n-grid">
+        ${_cap6Sel(i, 'VM', 'VM', s.sel?.VM ?? 8, 'A · Altezza mani (cm)')}
+        ${_cap6Sel(i, 'DM', 'DM', s.sel?.DM ?? 0, 'B · Distanza verticale (cm)')}
+        ${_cap6Sel(i, 'HM', 'HM', s.sel?.HM ?? 0, 'C · Distanza orizzontale (cm)')}
+        ${_cap6Sel(i, 'AM', 'AM', s.sel?.AM ?? 0, 'D · Angolo')}
+        ${_cap6Sel(i, 'CM', 'CM', s.sel?.CM ?? 0, 'E · Presa')}
+        ${_cap6Sel(i, 'OM', 'OM', s.sel?.OM ?? 0, 'G · Arti')}
+        ${_cap6Sel(i, 'PM', 'PM', s.sel?.PM ?? 0, 'H · N° persone')}
+      </div>
+      <div class="c6n-res" id="c6n-res-${i}">${_cap6ResSInner(rwl, idx)}</div>
+    </div>`;
+  }
+
+  function _cap6SchedaTHtml(s, i) {
+    const r = _cap6TraspJs(s);
+    return `<div class="c6n-scheda c6n-scheda--t" data-i="${i}">
+      <div class="c6n-hdr c6n-hdr--t">
+        <span class="c6n-hdr-n">Scheda ${escHtml(s.n)}</span>
+        <span class="c6n-hdr-t">Trasporto in piano</span>
+      </div>
+      <div class="c6n-note">Dal JSON — peso: <b>${escAttr(s.peso ?? '')}</b> kg · sollevamenti/min: <b>${escAttr(s.sollevamenti_min ?? '')}</b> · ore turno: <b>${escAttr(s.ore_turno ?? '')}</b></div>
+      <div class="c6n-grid">
+        ${_cap6Sel(i, 'MCUM', 'MCUM', s.sel?.MCUM ?? 0, 'Massa cumulativa (ore)')}
+        ${_cap6Sel(i, 'DIST', 'T_DIST', s.sel?.DIST ?? 0, 'Distanza trasporto')}
+        ${_cap6Sel(i, 'POS', 'T_POS', s.sel?.POS ?? 0, 'Posizione mano')}
+        ${_cap6Sel(i, 'COND', 'T_COND', s.sel?.COND ?? 0, 'Condizioni (rif.)')}
+        ${_cap6Sel(i, 'ARTI', 'T_ARTI', s.sel?.ARTI ?? 0, 'Arti (rif.)')}
+      </div>
+      <div class="c6n-res" id="c6n-res-${i}">${_cap6ResTInner(r)}</div>
+    </div>`;
+  }
+
+  function onCap6Sel(i, key, val) {
+    const s = (state.cap6Schede || [])[i]; if (!s) return;
+    if (!s.sel) s.sel = {};
+    s.sel[key] = parseInt(val, 10) || 0;
+    _cap6UpdateRes(i);
+    _cap6NativeSave();
+  }
+
+  function onCap6Field(i, field, val) {
+    const s = (state.cap6Schede || [])[i]; if (!s) return;
+    s[field] = (field === 'peso') ? (parseFloat(val) || 0) : val;
+    _cap6UpdateRes(i);
+    _cap6NativeSave();
+  }
+
+  function _cap6UpdateRes(i) {
+    const s = (state.cap6Schede || [])[i]; if (!s) return;
+    const resEl = document.getElementById(`c6n-res-${i}`);
+    if (!resEl) return;
+    if (s.tipo === 'T') {
+      resEl.innerHTML = _cap6ResTInner(_cap6TraspJs(s));
+    } else {
+      const rwl = _cap6RwlJs(s);
+      const idx = rwl > 0 ? Math.round((+s.peso || 0) / rwl * 100) / 100 : null;
+      resEl.innerHTML = _cap6ResSInner(rwl, idx);
+    }
+  }
+
+  let _cap6SaveT = null;
+  function _cap6NativeSave() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_cap6SaveT);
+    _cap6SaveT = setTimeout(() =>
+      call('salva_cap6_schede', jp, state.cap6Schede || []).catch(() => {}), 500);
   }
 
   /* ── Capitolo 10 — Rumore ───────────────────────────────────────────── */
@@ -6709,27 +7035,88 @@ const App = (() => {
 
   function _c7Rerender(fieldId) {
     const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
-    if (outer) outer.innerHTML = buildCap7Editor(fieldId, state.formValues[fieldId]);
+    if (!outer) return;
+    outer.innerHTML = buildCap7Editor(fieldId, state.formValues[fieldId])
+      + `<div id="cap7-native-${fieldId}" class="cap6-native"><div class="cap14-note">Caricamento schede OCRA…</div></div>`;
+    setTimeout(() => _loadCap7Native(fieldId), 0);
+  }
+
+  /* Approccio movimenti ripetitivi del JSON (speculare al backend _cap7_modalita):
+     'template' | 'approfondita' (valutazione libera) | 'misto' | 'vuoto'. */
+  function _cap7Modalita() {
+    const mr = (state.jsonRaw && state.jsonRaw.movimenti_ripetitivi) || {};
+    const vals = new Set();
+    const modal = mr.modalita_gruppi;
+    if (modal && typeof modal === 'object') {
+      Object.values(modal).forEach(v => vals.add(String(v).trim().toLowerCase()));
+    }
+    (mr.valutazioni_gruppi || []).forEach(vg => {
+      const t = String((vg && vg.tipo_valutazione) || '').trim().toLowerCase();
+      if (t) vals.add(t);
+    });
+    const hasLista = Array.isArray(mr.valutazioni_lista) && mr.valutazioni_lista.length > 0;
+    const hasTemplate = vals.has('template');
+    const hasAppro = ['approfondita', 'libera', 'completa', 'approfondito'].some(k => vals.has(k)) || hasLista;
+    if (hasTemplate && hasAppro) return 'misto';
+    if (hasTemplate) return 'template';
+    if (hasAppro) return 'approfondita';
+    if (Array.isArray(mr.gruppi_selezionati) && mr.gruppi_selezionati.length) return 'template';
+    return 'vuoto';
+  }
+
+  function _cap7Banner(mod) {
+    if (mod === 'approfondita') {
+      return _apprBanner('libera', 'Valutazione libera',
+        'Il tecnico esterno ha valutato <b>a mano</b> frequenza, forza e postura: le schede OCRA qui sotto partono da quei giudizi (punteggi da correggere).',
+        `<p><b>Cosa significa.</b> Per i movimenti ripetitivi degli arti superiori, il tecnico del sopralluogo ha descritto l'attività in modo qualitativo: frequenza (bassa/media/alta), forza (moderata/forte/intensa) e postura (neutra/incongrua per spalla, gomito, polso e mano).</p>
+         <p><b>Cosa devi fare tu.</b> Il software traduce quei giudizi in punteggi OCRA <i>di partenza</i>: controllali e correggili dove serve. Attenzione: il tecnico non fornisce i moltiplicatori di <b>recupero</b> e <b>durata</b> né i <b>fattori complementari</b> — impostali tu in base al turno. L'indice OCRA per l'arto destro e sinistro e il livello di rischio si aggiornano dal vivo.</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione la scheda OCRA (check-list, indici, livello di rischio, misure) è disegnata in modo nativo nel Word, senza Excel.</p>`);
+    }
+    if (mod === 'template') {
+      return _apprBanner('template', 'Valutazione a modelli',
+        'Il tecnico esterno ha indicato <b>attività standard</b>: scegli qui sotto le schede corrispondenti. I calcoli OCRA sono già pronti nei modelli.',
+        `<p><b>Cosa significa.</b> Il tecnico del sopralluogo ha indicato il <i>tipo</i> di attività ripetitiva svolta (es. «asciugatura capelli», «confezionamento», «attività di cassa»).</p>
+         <p><b>Cosa devi fare tu.</b> Apri ogni gruppo omogeneo e seleziona, dal catalogo, le schede delle attività svolte dal cliente. Ogni scheda contiene già la check-list OCRA compilata con i punteggi validati. Puoi scegliere più schede per lo stesso gruppo.</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione il software legge i valori OCRA dal modello (indice arto destro e sinistro, livello di rischio) e disegna la scheda nel Word, senza aprire Excel.</p>`);
+    }
+    if (mod === 'misto') {
+      return _apprBanner('misto', 'Valutazione mista',
+        'Alcuni gruppi a <b>modelli di catalogo</b>, altri a <b>valutazione libera</b>. Gestisci qui sotto i gruppi a modelli; gli altri sono già compilati.',
+        `<p><b>Cosa significa.</b> Il tecnico esterno ha usato approcci diversi a seconda del gruppo omogeneo: per alcuni ha scelto modelli standard, per altri ha descritto l'attività a mano.</p>
+         <p><b>Cosa devi fare tu.</b> Usa la maschera di selezione qui sotto per i gruppi a modelli; le schede OCRA dei gruppi a valutazione libera partono dai giudizi del tecnico — controllale e completa i fattori mancanti.</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione tutte le schede vengono disegnate in modo nativo nel Word, senza Excel.</p>`);
+    }
+    return _apprBanner('vuoto', 'Nessun dato',
+      'Il file di questo cliente non contiene dati di <b>movimenti ripetitivi</b> per questo capitolo.',
+      `<p>Il tecnico esterno non ha compilato la sezione sui movimenti ripetitivi degli arti superiori. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede OCRA. Se invece il rischio c'è, va richiesta al tecnico la valutazione.</p>`);
   }
 
   function buildCap7Editor(fieldId, data) {
+    const mod = _cap7Modalita();
+    const banner = _cap7Banner(mod);
     const ed = state.formValues[fieldId] || { gruppi: [] };
     const gruppi = ed.gruppi || [];
     const cat = state.mvrCatalog;
 
+    // VALUTAZIONE LIBERA: la maschera di catalogo NON compare; le schede OCRA
+    // (box nativo qui sotto) sono costruite dai dati del tecnico.
+    if (mod === 'approfondita') {
+      return `<div class="c6-editor" id="c7-editor-${fieldId}">${banner}</div>`;
+    }
+
     if (!Array.isArray(cat)) {
-      return `<div class="c6-editor"><div class="c6-empty">Caricamento catalogo schede…</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Caricamento catalogo schede…</div></div>`;
     }
     if (!cat.length) {
-      return `<div class="c6-editor"><div class="c6-empty">Catalogo schede non trovato nella cartella dei modelli (sottocartella <code>MODELLI MOVIMENTI RIPETUTI/</code>). Controlla la cartella dei template.</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Catalogo schede non trovato nella cartella dei modelli (sottocartella <code>MODELLI MOVIMENTI RIPETUTI/</code>). Controlla la cartella dei template.</div></div>`;
     }
     if (!gruppi.length) {
-      return `<div class="c6-editor"><div class="c6-empty">Nessun gruppo omogeneo nel JSON del cliente: non è possibile assegnare le schede.</div></div>`;
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Nessun gruppo omogeneo nel JSON del cliente: non è possibile assegnare le schede.</div></div>`;
     }
 
     const tot = gruppi.reduce((a, g) => a + (g.schede || []).length, 0);
-    return `<div class="c6-editor" id="c7-editor-${fieldId}">
-      <div class="c6-intro">Apri ogni <b>gruppo omogeneo</b>: sotto trovi le <b>informazioni scritte dal tecnico esterno</b> (mansione, attività, addetti e i movimenti ripetitivi valutati) per aiutarti a scegliere. In base a queste, seleziona le <b>schede</b> (attività) dei movimenti ripetitivi svolti. Ogni scheda scelta viene riportata integralmente nel capitolo con il proprio foglio di calcolo OCRA; il software compila solo <b>numero scheda</b> e <b>gruppo omogeneo</b>. Ogni gruppo può avere più schede.</div>
+    return `<div class="c6-editor" id="c7-editor-${fieldId}">${banner}
+      <div class="c6-intro">Apri ogni <b>gruppo omogeneo</b>: sotto trovi le <b>informazioni scritte dal tecnico esterno</b> per aiutarti a scegliere. Seleziona le <b>schede</b> (attività) dei movimenti ripetitivi svolti: in esportazione il foglio OCRA del modello è disegnato in modo nativo nel Word. Ogni gruppo può avere più schede.</div>
       ${gruppi.map((g, gi) => _buildC7Gruppo(fieldId, gi, g, cat)).join('')}
       <div class="c6-tot">Totale: <b>${tot}</b> scheda/e selezionata/e</div>
     </div>`;
@@ -6770,6 +7157,127 @@ const App = (() => {
     else g.schede.push(key);
     _c7Rerender(fieldId);
     saveChapterDraft();
+  }
+
+  // ── Cap7 — box nativo OCRA (valutazione libera: schede editabili) ─────────
+  const C7_BANDS = [
+    { max: 5.0, liv: 'RISCHIO ASSENTE', col: '#1E7A46' },
+    { max: 7.5, liv: 'RISCHIO ACCETTABILE', col: '#2E9E5B' },
+    { max: 11.0, liv: 'RISCHIO MOLTO LIEVE', col: '#C9A227' },
+    { max: 14.0, liv: 'RISCHIO LIEVE', col: '#E08A1E' },
+    { max: 22.5, liv: 'RISCHIO MEDIO', col: '#D64A3A' },
+    { max: Infinity, liv: 'RISCHIO ELEVATO', col: '#A11D1D' },
+  ];
+  function _c7n(x) { const f = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isNaN(f) ? 0 : f; }
+  function _c7Classify(v) { v = _c7n(v); for (const b of C7_BANDS) if (v <= b.max) return b; return C7_BANDS[C7_BANDS.length - 1]; }
+  function _c7Index(s) {
+    const compl = _c7n(s.compl), mr = _c7n(s.molt_recupero) || 1, md = _c7n(s.molt_durata) || 1;
+    const ov = (v) => v != null && v !== '';
+    const dx = ov(s.indice_dx_override) ? _c7n(s.indice_dx_override)
+      : (_c7n(s.freq_dx) + _c7n(s.forza_dx) + _c7n(s.postura_dx) + compl) * mr * md;
+    const sx = ov(s.indice_sx_override) ? _c7n(s.indice_sx_override)
+      : (_c7n(s.freq_sx) + _c7n(s.forza_sx) + _c7n(s.postura_sx) + compl) * mr * md;
+    return { dx, sx };
+  }
+
+  async function _loadCap7Native(fieldId) {
+    const box = document.getElementById(`cap7-native-${fieldId}`);
+    if (!box) return;
+    const jp = state.currentClient?.json_path;
+    if (!jp) { box.innerHTML = ''; return; }
+    let r;
+    try { r = await call('get_cap7_schede', jp); } catch (e) { r = null; }
+    if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
+    state.cap7Schede = r.schede || [];
+    state.cap7Modalita = r.modalita || 'vuoto';
+    _renderCap7Native(fieldId);
+  }
+
+  function _renderCap7Native(fieldId) {
+    const box = document.getElementById(`cap7-native-${fieldId}`);
+    if (!box) return;
+    const mod = state.cap7Modalita;
+    const schede = state.cap7Schede || [];
+    if (mod === 'template') {
+      box.innerHTML = `<div class="cap14-note">Le schede scelte dal catalogo verranno disegnate in modo nativo nel Word (con i valori OCRA del modello) in fase di esportazione.</div>`;
+      return;
+    }
+    if (!schede.length) {
+      box.innerHTML = mod === 'vuoto' ? '' :
+        `<div class="cap14-note">Nessuna scheda OCRA da compilare per questo cliente.</div>`;
+      return;
+    }
+    box.innerHTML =
+      `<div class="c6n-misure-note">Valori OCRA di partenza derivati dai descrittori del tecnico. Correggili dove serve: l'indice e il livello di rischio si aggiornano dal vivo.</div>`
+      + schede.map((s, i) => _cap7SchedaHtml(s, i)).join('')
+      + `<div class="c6n-misure-bar"><button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.saveCap7Schede('${fieldId}')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Salva schede OCRA</button></div>`;
+    schede.forEach((s, i) => _cap7UpdateRes(i));
+  }
+
+  function _c7num(i, field, label, val) {
+    return `<label class="c6n-f"><span>${label}</span>
+      <input type="number" step="0.1" value="${val == null ? '' : val}" oninput="App.onCap7Field(${i},'${field}',this.value)"></label>`;
+  }
+
+  function _cap7SchedaHtml(s, i) {
+    const q = [s.q_frequenza ? `frequenza: ${s.q_frequenza}` : '',
+               s.q_forza ? `forza: ${s.q_forza}` : ''].filter(Boolean).join('  ·  ');
+    return `<section class="c6n-group" data-c7i="${i}">
+      <header class="c6n-group-hdr">
+        <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
+        <span class="c6n-group-nome">${escHtml(s.gruppo_label || 'Gruppo omogeneo')}</span>
+        <span class="c6n-group-badge">${escHtml(s.fase || '—')}</span>
+      </header>
+      <div class="c6n-group-body">
+        ${q ? `<div class="c6n-m"><b>Valutazione tecnico:</b> ${escHtml(q)}</div>` : ''}
+        <div class="c6n-grid">
+          ${_c7num(i, 'freq_dx', 'Frequenza · arto dx', s.freq_dx)}
+          ${_c7num(i, 'freq_sx', 'Frequenza · arto sx', s.freq_sx)}
+          ${_c7num(i, 'forza_dx', 'Forza · arto dx', s.forza_dx)}
+          ${_c7num(i, 'forza_sx', 'Forza · arto sx', s.forza_sx)}
+          ${_c7num(i, 'postura_dx', 'Postura · arto dx', s.postura_dx)}
+          ${_c7num(i, 'postura_sx', 'Postura · arto sx', s.postura_sx)}
+          ${_c7num(i, 'compl', 'Fattori complementari', s.compl)}
+          ${_c7num(i, 'molt_recupero', 'Molt. recupero', s.molt_recupero)}
+          ${_c7num(i, 'molt_durata', 'Molt. durata', s.molt_durata)}
+        </div>
+        <div class="c7n-res" id="c7n-res-${i}"></div>
+      </div>
+    </section>`;
+  }
+
+  function onCap7Field(i, field, val) {
+    const s = (state.cap7Schede || [])[i];
+    if (!s) return;
+    s[field] = val;
+    _cap7UpdateRes(i);
+  }
+
+  function _cap7UpdateRes(i) {
+    const s = (state.cap7Schede || [])[i];
+    if (!s) return;
+    const el = document.getElementById('c7n-res-' + i);
+    if (!el) return;
+    const { dx, sx } = _c7Index(s);
+    const cdx = _c7Classify(dx), csx = _c7Classify(sx);
+    const fmt = v => (Math.round(_c7n(v) * 100) / 100).toString().replace('.', ',');
+    el.innerHTML =
+      `<div class="c7n-idx-cell"><span>Indice OCRA · arto DESTRO (dominante)</span>
+        <b style="background:${cdx.col}">${fmt(dx)}</b><i>${cdx.liv}</i></div>
+       <div class="c7n-idx-cell"><span>Indice OCRA · arto SINISTRO</span>
+        <b style="background:${csx.col}">${fmt(sx)}</b><i>${csx.liv}</i></div>`;
+  }
+
+  async function saveCap7Schede(fieldId) {
+    const jp = state.currentClient?.json_path;
+    if (!jp) { toast('Cliente non disponibile', 'error'); return; }
+    try {
+      const r = await call('salva_cap7_schede', jp, state.cap7Schede || []);
+      if (r && r.ok) toast('Schede OCRA salvate', 'success');
+      else toast((r && r.error) || 'Errore nel salvataggio', 'error');
+    } catch (e) { toast('Errore nel salvataggio', 'error'); }
   }
 
   /* ── Cap17 — Agenti Biologici ───────────────────────────────────────── */
@@ -8449,80 +8957,9 @@ const App = (() => {
     document.getElementById('cfg-root-folder').value = cfg.root_folder || '';
     const clientiEl = document.getElementById('cfg-clienti-folder');
     if (clientiEl) clientiEl.value = cfg.clienti_folder || '';
-    // Email questionari
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
-    set('cfg-smtp-email', cfg.smtp_email);
-    set('cfg-smtp-mittente', cfg.smtp_mittente);
-    set('cfg-smtp-host', cfg.smtp_host || 'smtp.office365.com');
-    set('cfg-smtp-port', cfg.smtp_port || 587);
-    const pwd = document.getElementById('cfg-smtp-password');
-    if (pwd) {
-      pwd.value = '';
-      pwd.placeholder = cfg.smtp_password_set
-        ? '••••••••  (già impostata — scrivi solo per cambiarla)'
-        : 'password dell’account';
-    }
-    _refreshSurveyStatus();
     _updateDerivedPaths(cfg);
     await checkTemplate();
     showView('config');
-  }
-
-  async function _refreshSurveyStatus() {
-    const box = document.getElementById('cfg-survey-status');
-    if (!box) return;
-    const st = await call('get_survey_status') || {};
-    state._surveyRows = {};
-    let rid = 0;
-    const righe = (st.voci || []).slice(0, 8).map(v => {
-      const tipo = v.tipo === 'qualita' ? 'Qualità' : 'Iniziale';
-      // Voce senza email → nome cliente in evidenza + inserimento email inline
-      if (!v.email && v.stato !== 'inviata') {
-        const id = rid++;
-        state._surveyRows[id] = v.json_path || '';
-        return `<div class="cfg-survey-row cfg-survey-row--warn">
-          <div class="cfg-survey-warn-hd">⚠ <b>${escHtml(v.cliente || 'Cliente')}</b> — email mancante · ${tipo}</div>
-          <div class="cfg-survey-inline">
-            <input type="email" id="cfg-survey-mail-${id}" placeholder="email del cliente" autocomplete="off" spellcheck="false">
-            <button class="btn btn-primary btn-sm" onclick="App.salvaEmailCoda(${id})">Salva</button>
-          </div>
-        </div>`;
-      }
-      let stato;
-      if (v.stato === 'inviata') {
-        stato = '✓ inviata' + (v.inviata_il
-          ? ' il ' + new Date(v.inviata_il).toLocaleDateString('it-IT') : '');
-      } else if (v.ultimo_errore) {
-        stato = '⚠ in attesa (' + escHtml(v.ultimo_errore).slice(0, 60) + '…)';
-      } else {
-        stato = 'in attesa' + (v.invia_dopo
-          ? ' — prevista: ' + new Date(v.invia_dopo).toLocaleDateString('it-IT') : '');
-      }
-      return `<div class="cfg-survey-row"><b>${tipo}</b> · ${escHtml(v.cliente || '?')}
-        → ${escHtml(v.email || '—')} · ${stato}</div>`;
-    }).join('');
-    box.innerHTML = `
-      <div class="cfg-survey-summary">
-        Questionari: <b>${st.in_attesa ?? 0}</b> in attesa · <b>${st.inviate ?? 0}</b> inviati
-        ${st.configurato ? '' : ' — <span style="color:var(--error)">account non configurato</span>'}
-        ${(st.in_attesa ?? 0) > 0 ? `<button class="btn btn-outline btn-sm" style="margin-left:10px"
-          onclick="App.surveyInviaOra()">Invia ora quelli scaduti</button>` : ''}
-      </div>${righe}`;
-  }
-
-  async function salvaEmailCoda(rid) {
-    const jsonPath = (state._surveyRows || {})[rid];
-    const inp = document.getElementById('cfg-survey-mail-' + rid);
-    const email = (inp?.value || '').trim();
-    if (!email || !email.includes('@')) {
-      toast('Inserire un indirizzo email valido', 'error');
-      return;
-    }
-    const res = await call('registra_survey_email', jsonPath, email);
-    if (res?.ok) {
-      toast('Email salvata — questionari in invio', 'success');
-      _refreshSurveyStatus();
-    }
   }
 
   /* ── Note di rilascio (modale) ─────────────────────────────────────── */
@@ -8535,7 +8972,7 @@ const App = (() => {
     ov.innerHTML = `
       <div class="survey-email-card release-modal">
         <h3>Note di rilascio</h3>
-        <div class="release-version">Presidia · versione 1.5</div>
+        <div class="release-version">Presidia · versione 1.6</div>
         <p class="release-copyright">Il presente software è stato ideato e sviluppato da
         <strong>Marco Mancuso</strong>. Opera tutelata ai sensi della normativa vigente in materia
         di diritto d'autore e proprietà intellettuale. Tutti i diritti sono riservati al titolare.
@@ -8548,38 +8985,6 @@ const App = (() => {
         </div>
       </div>`;
     document.body.appendChild(ov);
-  }
-
-  async function surveyInviaOra() {
-    const res = await call('processa_survey_queue') || {};
-    toast(`Inviate: ${res.inviate ?? 0} — errori: ${res.errori ?? 0}`,
-          (res.errori ? 'error' : 'success'));
-    _refreshSurveyStatus();
-  }
-
-  async function testSmtp() {
-    const esito = document.getElementById('cfg-smtp-esito');
-    if (esito) { esito.textContent = 'Salvataggio e invio in corso…'; esito.className = 'cfg-smtp-esito'; }
-    await _saveSmtpConfig();                 // usa i valori appena digitati
-    const res = await call('test_smtp') || {};
-    if (esito) {
-      esito.textContent = res.messaggio || (res.ok ? 'Inviata.' : 'Errore.');
-      esito.className = 'cfg-smtp-esito ' + (res.ok ? 'ok' : 'err');
-    }
-    _refreshSurveyStatus();
-  }
-
-  async function _saveSmtpConfig() {
-    const val = id => (document.getElementById(id)?.value || '').trim();
-    const payload = {
-      smtp_email:    val('cfg-smtp-email'),
-      smtp_mittente: val('cfg-smtp-mittente'),
-      smtp_host:     val('cfg-smtp-host') || 'smtp.office365.com',
-      smtp_port:     parseInt(val('cfg-smtp-port') || '587', 10) || 587,
-    };
-    const pwd = val('cfg-smtp-password');
-    if (pwd) payload.smtp_password = pwd;    // vuota = mantieni quella salvata
-    await call('save_config', payload);
   }
 
   function _updateDerivedPaths(cfg) {
@@ -8635,7 +9040,6 @@ const App = (() => {
     const nomeEl = document.getElementById('cfg-nome-utente');
     const nome = nomeEl ? nomeEl.value.trim() : '';
     const res = await call('save_config', { root_folder: root, nome_utente: nome });
-    await _saveSmtpConfig();
     if (res?.ok) {
       toast('Configurazione salvata', 'success');
       state.config.nome_utente = nome;
@@ -8643,7 +9047,6 @@ const App = (() => {
     } else toast('Errore nel salvataggio', 'error');
     const cfg = await call('get_config');
     _updateDerivedPaths(cfg);
-    _refreshSurveyStatus();
     await checkTemplate();
   }
 
@@ -9080,7 +9483,8 @@ const App = (() => {
     onCap20DprSearch, onCap20DprSelect, onCap20DprBlur,
     toggleC20Area,
     // Cap6 editor
-    onC6VarToggle,
+    onC6VarToggle, onCap6Sel, onCap6Field,
+    openCap6Misure, saveCap6Misure, closeCap6Misure, onCap6MisMain, onCap6MisSub,
     // Cap10 editor
     onC10Fonometro, onC10GruppoField, onC10AttSel,
     onC10AddGruppo, onC10RemoveGruppo,
@@ -9095,7 +9499,7 @@ const App = (() => {
     onCap14ProdName, onCap14ProdRemove, onCap14ProdAdd,
     onCap14ProdSchedaSearch, onCap14ProdSchedaPick, onCap14ProdUseSuggested,
     // Cap7 editor
-    onC7SchedaToggle,
+    onC7SchedaToggle, onCap7Field, saveCap7Schede,
     // Cap17 editor
     onC17Settore,
     // Cap21 editor
@@ -9108,8 +9512,7 @@ const App = (() => {
     onC11AddGruppo, onC11RemoveGruppo,
     onC11PrescrizioneHav, onC11PrescrizioneWbv, onC11PrescrizioneGen,
     exportClientDocx, exportClientPdf, exportAllTogether, compileAllToFolder,
-    testSmtp, surveyInviaOra, confirmSurveyEmail,
-    salvaEmailCoda, showReleaseNotes, askSurveyEmailForClient,
+    showReleaseNotes,
     toast, showLoading, hideLoading,
     // Aggiornamenti GitHub
     updaterDismiss, updaterApplySupporto, updaterDownloadApp, updaterOpenGithub,

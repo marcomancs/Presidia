@@ -22,7 +22,7 @@
 		</data>
 		<key>Resources/base_library.zip</key>
 		<data>
-		7/M1a5ZlLQH/6SfaPEm6BRGPfV4=
+		1s1t5RN248pNlMPhSqwy5GkKaJY=
 		</data>
 		<key>Resources/certifi/cacert.pem</key>
 		<data>
@@ -168,17 +168,25 @@
 		<data>
 		3h36M88fA5LMnnbeCFInLtZ4ovY=
 		</data>
+		<key>Resources/web/Logo_stone.png</key>
+		<data>
+		bLe83K4e1yU5vQ6MZmhtX/Hk29U=
+		</data>
 		<key>Resources/web/activation.html</key>
 		<data>
 		9Ow2fgh46AQgZ2PSsMJX1H2cF3c=
 		</data>
 		<key>Resources/web/app.js</key>
 		<data>
-		a3WG20tvgJA8BM0XbCTmmhL/liE=
+		nb/JdZimPY/zIfdTa6+5vg1FUjg=
 		</data>
 		<key>Resources/web/index.html</key>
 		<data>
-		tcJ1W55MkrNG37xeGbGpDHTGtas=
+		qi7tnXx8XLq2TtXiwtEss5zA9ZI=
+		</data>
+		<key>Resources/web/splash.html</key>
+		<data>
+		VtQxyCq0lcxjRLHiO5M94yt7y+M=
 		</data>
 		<key>Resources/web/stone_icon.png</key>
 		<data>
@@ -186,7 +194,7 @@
 		</data>
 		<key>Resources/web/style.css</key>
 		<data>
-		/BzkebiWKJBluHSGO0bPoaXnYZQ=
+		g3uKEWo4Kg+NrjkBvHfodTREpyQ=
 		</data>
 		<key>Resources/webview/js/api.js</key>
 		<data>
@@ -1298,7 +1306,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			V8Fys9/VBMZqxYgyEXMhU+cTf8M2HBY6J1vTYHNZy5U=
+			zdH2LiKW/dDzvAPbTyte+GEafDTGnabAjE9H0n04Abw=
 			</data>
 		</dict>
 		<key>Resources/certifi/cacert.pem</key>
@@ -1688,6 +1696,13 @@
 			71rWmpx8mz/JHQyTqsoHlDq5y+7PD4uGhp6cpM0lKsk=
 			</data>
 		</dict>
+		<key>Resources/web/Logo_stone.png</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			1GlQkqzJQlFNu0Sm7lYZ5Aw4qMky6whETnZOq2xp2JI=
+			</data>
+		</dict>
 		<key>Resources/web/activation.html</key>
 		<dict>
 			<key>hash2</key>
@@ -1699,14 +1714,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			ahOzZmBdYqbIB0qYFz1sAaj4CIRw3hJkQ92zi9DJ46s=
+			We4mkCiUq7r6N267I/sLvKgdXsUuQGIXZC/WIUSRTkk=
 			</data>
 		</dict>
 		<key>Resources/web/index.html</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			oelI3PYuFQ3HIUXhd3FTE7Y3mcgxGE4UmHTNY2yAWrs=
+			8yeVeoEGS3RZpt8FKty9ofjPFLJ6OMYWncl8zKZOclE=
+			</data>
+		</dict>
+		<key>Resources/web/splash.html</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			laIvIGKvIHz/iQqCJIBFAhnR7OD6CsILVIrwnibPgdM=
 			</data>
 		</dict>
 		<key>Resources/web/stone_icon.png</key>
@@ -1720,7 +1742,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			Th0oDD7wVzLmJG4H0SSiJATSqhfAuq519qV4Rt7rZ0E=
+			yopg3lNYmIPUTHlqJ7NM5mpDe6iOs9fYdtz2l7q66q8=
 			</data>
 		</dict>
 		<key>Resources/webview/js/api.js</key>
