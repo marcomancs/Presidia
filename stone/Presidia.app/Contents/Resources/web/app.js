@@ -2627,6 +2627,13 @@ const App = (() => {
       initCap10Editor(fd.id, cap10Data);
       wrap.innerHTML = buildCap10Editor(fd.id, cap10Data);
 
+    } else if (fd.type === 'cap6b_editor') {
+      wrap.style.gridColumn = '1 / -1';
+      wrap.setAttribute('data-field-id', fd.id);
+      const cap6bData = (prefill[fd.id] || state.tablePrefill[fd.id] || {});
+      initCap6bEditor(fd.id, cap6bData);
+      wrap.innerHTML = buildCap6bEditor(fd.id, cap6bData);
+
     } else if (fd.type === 'cap7_editor') {
       wrap.style.gridColumn = '1 / -1';
       wrap.setAttribute('data-field-id', fd.id);
@@ -5818,7 +5825,10 @@ const App = (() => {
     // movimentazioni-tipo (dal catalogo MMC) e le varianti demografiche.
     // Lista gruppi SEMPRE dal JSON vivo (self-healing); le movimentazioni scelte
     // dal tecnico si conservano per nome gruppo. Evita il falso "Nessun gruppo".
-    const gruppi = _mergeGruppiFromJson(data, 'movimentazioni', 'mmc', 'mmc');
+    // VALUTAZIONE MISTA: l'editor a modelli mostra SOLO i gruppi a valutazione
+    // 'template' (quelli 'approfondita' hanno le schede libere, non il catalogo).
+    const gruppi = _mergeGruppiFromJson(data, 'movimentazioni', 'mmc', 'mmc',
+      g => _cap6ModoGruppo(g && g.nome) !== 'libera');
     state.formValues[fieldId] = { gruppi };
     // Catalogo MMC dal backend (movimentazioni + varianti). Caricato una sola
     // volta; se torna vuoto (errore transitorio) si ritenta alla prossima apertura.
@@ -5863,22 +5873,24 @@ const App = (() => {
   // facendo comparire a torto "Nessun gruppo omogeneo nel JSON").
   //   selKey  = 'movimentazioni' (Cap6) | 'schede' (Cap7)
   //   flagKey = 'mmc' (Cap6) | 'mr' (Cap7)   riskFlag = campo in g.rischi
-  function _mergeGruppiFromJson(data, selKey, flagKey, riskFlag) {
+  function _mergeGruppiFromJson(data, selKey, flagKey, riskFlag, keepFn) {
+    const keep = (typeof keepFn === 'function') ? keepFn : (() => true);
     const jsonGruppi = (state.jsonRaw?.ciclo_lavoro?.gruppi || []);
     const saved = (data && Array.isArray(data.gruppi)) ? data.gruppi : [];
     // Nessun gruppo nel JSON (o JSON non ancora caricato): usa la bozza com'è.
-    if (!jsonGruppi.length) return saved;
+    if (!jsonGruppi.length) return saved.filter(g => keep(g));
     const byName = {};
     saved.forEach(g => { if (g && g.nome != null) byName[String(g.nome)] = g; });
     const out = jsonGruppi.map((g, i) => {
       const nome = g.nome || `Gruppo ${i + 1}`;
+      if (!keep({ nome })) return null;   // numero resta quello del JSON (i + 1)
       const prev = byName[String(nome)];
       const sel = (prev && Array.isArray(prev[selKey])) ? prev[selKey] : [];
       const rec = { numero: i + 1, nome,
                     [flagKey]: !!(g.rischi && g.rischi[riskFlag]) };
       rec[selKey] = sel;
       return rec;
-    });
+    }).filter(Boolean);
     // Gruppi con il rischio pertinente per primi (stabile), come il backend.
     out.sort((a, b) => (a[flagKey] ? 0 : 1) - (b[flagKey] ? 0 : 1) || a.numero - b.numero);
     return out;
@@ -6048,6 +6060,31 @@ const App = (() => {
           </span></li>`).join('')}</ul>
       </div>` : `<div class="c6-info-none">Il tecnico esterno non ha dettagliato le fasi ripetitive per questo gruppo. Scegli le schede in base alla descrizione dell'attività.</div>`;
     return `<div class="c6-info">${_gruppoInfoHead(raw, 'Rischio movimenti ripetitivi segnalato', hasRisk)}${evalHtml}</div>`;
+  }
+
+  /* Modalità di valutazione MMC di UN gruppo: 'template' | 'libera' | null.
+     Legame per NOME gruppo via valutazioni_gruppi; modalita_gruppi ha come chiave
+     il nome OPPURE l'id del gruppo (l'id si risolve tramite valutazioni_gruppi). */
+  function _cap6ModoGruppo(nome, root) {
+    const mmc = (state.jsonRaw && state.jsonRaw[root || 'mmc']) || {};
+    const norm = t => {
+      t = String(t || '').trim().toLowerCase();
+      if (t === 'template') return 'template';
+      return ['approfondita', 'libera', 'completa', 'approfondito'].includes(t) ? 'libera' : null;
+    };
+    const id2nome = {};
+    let found = null;
+    (mmc.valutazioni_gruppi || []).forEach(vg => {
+      if (!vg) return;
+      if (vg.gruppo_id && vg.gruppo_nome) id2nome[vg.gruppo_id] = vg.gruppo_nome;
+      if (vg.gruppo_nome === nome) { const n = norm(vg.tipo_valutazione); if (n) found = n; }
+    });
+    if (!found && mmc.modalita_gruppi && typeof mmc.modalita_gruppi === 'object') {
+      for (const [k, v] of Object.entries(mmc.modalita_gruppi)) {
+        if ((id2nome[k] || k) === nome) { const n = norm(v); if (n) { found = n; break; } }
+      }
+    }
+    return found;
   }
 
   /* Approccio MMC del JSON (speculare al backend _cap6_modalita):
@@ -7022,7 +7059,10 @@ const App = (() => {
     // (attività) dal catalogo MODELLI MOVIMENTI RIPETUTI (≥1 per gruppo).
     // Lista gruppi SEMPRE dal JSON vivo (self-healing); le schede scelte dal
     // tecnico si conservano per nome gruppo. Evita il falso "Nessun gruppo".
-    const gruppi = _mergeGruppiFromJson(data, 'schede', 'mr', 'movimenti_ripetitivi');
+    // VALUTAZIONE MISTA: l'editor a modelli mostra SOLO i gruppi a valutazione
+    // 'template' (quelli 'approfondita' hanno le schede libere, non il catalogo).
+    const gruppi = _mergeGruppiFromJson(data, 'schede', 'mr', 'movimenti_ripetitivi',
+      g => _cap6ModoGruppo(g && g.nome, 'movimenti_ripetitivi') !== 'libera');
     state.formValues[fieldId] = { gruppi };
     if (!Array.isArray(state.mvrCatalog) || !state.mvrCatalog.length) {
       state.mvrCatalog = [];
@@ -7159,14 +7199,133 @@ const App = (() => {
     saveChapterDraft();
   }
 
+  /* ── Cap6B — Traino e Spinta: editor a MODELLI (catalogo TRAINO E SPINTA) ──
+     Per ogni gruppo omogeneo il tecnico sceglie i modelli (carriola, carrelli e
+     roll 5/30 min…). In esportazione il Word del modello resta INTATTO: il
+     software aggiunge solo numero scheda, gruppo omogeneo, sesso (dal JSON) e la
+     tabella di calcolo letta dal foglio del modello. */
+  function initCap6bEditor(fieldId, data) {
+    // Solo i gruppi NON a valutazione libera; numero = indice nel JSON.
+    const gruppi = _mergeGruppiFromJson(data, 'modelli', 'tras', 'traino_spinta',
+      g => _cap6ModoGruppo(g && g.nome, 'traino_spinta') !== 'libera');
+    state.formValues[fieldId] = { gruppi };
+    if (!Array.isArray(state.trasCatalog) || !state.trasCatalog.length) {
+      state.trasCatalog = [];
+      call('get_tras_catalog').then(cat => {
+        state.trasCatalog = Array.isArray(cat) ? cat : [];
+        _c6bRerender(fieldId);
+      }).catch(() => { state.trasCatalog = []; _c6bRerender(fieldId); });
+    }
+  }
+
+  function _c6bRerender(fieldId) {
+    const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
+    if (!outer) return;
+    outer.innerHTML = buildCap6bEditor(fieldId, state.formValues[fieldId]);
+  }
+
+  // Sesso/età dichiarati nel JSON per un gruppo (traino_spinta.gruppi_selezionati).
+  function _c6bDemoJson(nome) {
+    const ts = (state.jsonRaw && state.jsonRaw.traino_spinta) || {};
+    const sessi = new Set(), eta = new Set();
+    (ts.gruppi_selezionati || []).forEach(x => {
+      if (!x || x.gruppo_nome !== nome) return;
+      String(x.genere || '').toUpperCase().split('').forEach(c => { if (c === 'M' || c === 'F') sessi.add(c); });
+      (Array.isArray(x.eta) ? x.eta : []).forEach(e => eta.add(String(e)));
+    });
+    const etaLbl = { '20_45': '20-45 anni', 'sotto_20': 'sotto i 20', 'sopra_45': 'oltre i 45', 'oltre_45': 'oltre i 45' };
+    return {
+      sesso: sessi.size === 2 ? 'Maschi e femmine' : sessi.has('M') ? 'Maschi' : sessi.has('F') ? 'Femmine' : '',
+      eta: [...eta].map(e => etaLbl[e] || e.replace(/_/g, ' '))
+    };
+  }
+
+  function _cap6bBanner() {
+    return _apprBanner('template', 'Valutazione a modelli',
+      'Scegli, per ogni gruppo, i <b>modelli di traino e spinta</b> corrispondenti alle attività. Scheda, caselle e misure sono già nel modello.',
+      `<p><b>Cosa significa.</b> Ogni modello (es. «Carriola», «Carrelli e roll 5 min») contiene una scheda movimentazione carichi già valutata e un foglio di calcolo validato con le forze misurate e raccomandate (indici IRi e IRm).</p>
+       <p><b>Cosa devi fare tu.</b> Apri ogni gruppo omogeneo e includi i modelli che corrispondono alle attività reali. Lo stesso modello scelto su più gruppi compare una sola volta nel documento, con tutti i gruppi indicati.</p>
+       <p><b>Cosa succede in automatico.</b> Il modello viene riportato <b>senza modifiche</b>. Il software compila soltanto i campi vuoti: numero della scheda, gruppo omogeneo e sesso degli operatori (letto dal file del cliente), e disegna la tabella di calcolo nel Word senza aprire Excel.</p>`);
+  }
+
+  function _c6bInfoPanel(g) {
+    const raw = _gruppoRawByName(g.nome) || {};
+    const hasRisk = !!(raw.rischi && raw.rischi.traino_spinta) || !!g.tras;
+    const demo = _c6bDemoJson(g.nome);
+    const demoHtml = (demo.sesso || demo.eta.length) ? `<div class="c6-info-kv">
+        <span class="c6-info-k">Dal file del cliente</span>
+        <span class="c6-info-v">${[demo.sesso ? 'sesso: ' + demo.sesso : '', demo.eta.length ? 'età: ' + demo.eta.join(', ') : ''].filter(Boolean).map(escHtml).join(' · ')}</span></div>`
+      : `<div class="c6-info-none">Il file non indica sesso/età per questo gruppo: nella scheda comparirà «Maschi e femmine» con i calcoli di entrambi.</div>`;
+    return `<div class="c6-info">${_gruppoInfoHead(raw, 'Rischio traino e spinta segnalato', hasRisk)}${demoHtml}</div>`;
+  }
+
+  function buildCap6bEditor(fieldId, data) {
+    const banner = _cap6bBanner();
+    const ed = state.formValues[fieldId] || { gruppi: [] };
+    const gruppi = ed.gruppi || [];
+    const cat = state.trasCatalog;
+    if (!Array.isArray(cat)) {
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Caricamento catalogo modelli…</div></div>`;
+    }
+    if (!cat.length) {
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Catalogo modelli non trovato nella cartella dei template (sottocartella <code>TRAINO E SPINTA/</code>). Controlla la cartella dei template.</div></div>`;
+    }
+    if (!gruppi.length) {
+      return `<div class="c6-editor">${banner}<div class="c6-empty">Nessun gruppo omogeneo nel JSON del cliente: non è possibile assegnare i modelli.</div></div>`;
+    }
+    const tot = gruppi.reduce((a, g) => a + (g.modelli || []).length, 0);
+    return `<div class="c6-editor" id="c6b-editor-${fieldId}">${banner}
+      <div class="c6-intro">Apri ogni <b>gruppo omogeneo</b> e includi i <b>modelli</b> di traino/spinta svolti. Senza nessun modello selezionato il capitolo mantiene la scheda d'esempio del template, da completare a mano.</div>
+      ${gruppi.map((g, gi) => _buildC6bGruppo(fieldId, gi, g, cat)).join('')}
+      <div class="c6-tot">Totale: <b>${tot}</b> modello/i selezionato/i</div>
+    </div>`;
+  }
+
+  function _buildC6bGruppo(fieldId, gi, g, cat) {
+    const sel = g.modelli || [];
+    const open = sel.length > 0 ? ' open' : '';
+    return `<details class="c6-gruppo"${open}>
+      <summary class="c6-gruppo-hdr">
+        <span class="c6-gruppo-tit"><b>Gruppo ${g.numero}</b> — ${escHtml(g.nome || '')}</span>
+        <span class="c6-gruppo-badge${sel.length ? ' on' : ''}">${sel.length} modello/i</span>
+      </summary>
+      ${_c6bInfoPanel(g)}
+      <div class="c6-mov-hdr">Seleziona i modelli di traino e spinta svolti</div>
+      <div class="c6-mov-list">
+        ${cat.map(m => {
+          const on = sel.includes(m.key);
+          return `<div class="c6-mov-row${on ? ' active' : ''}">
+            <div class="c6-mov-name">${escHtml(m.nome)}</div>
+            <div class="c6-mov-vars">
+              <button type="button" class="c6-var-chip${on ? ' on' : ''}"
+                onclick="App.onC6bModelloToggle('${fieldId}',${gi},'${escAttr(m.key)}')">${on ? 'Incluso' : 'Includi'}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </details>`;
+  }
+
+  function onC6bModelloToggle(fieldId, gi, key) {
+    const ed = state.formValues[fieldId];
+    if (!ed || !ed.gruppi || !ed.gruppi[gi]) return;
+    const g = ed.gruppi[gi];
+    if (!Array.isArray(g.modelli)) g.modelli = [];
+    const i = g.modelli.indexOf(key);
+    if (i >= 0) g.modelli.splice(i, 1);
+    else g.modelli.push(key);
+    _c6bRerender(fieldId);
+    saveChapterDraft();
+  }
+
   // ── Cap7 — box nativo OCRA (valutazione libera: schede editabili) ─────────
   const C7_BANDS = [
     { max: 5.0, liv: 'RISCHIO ASSENTE', col: '#1E7A46' },
     { max: 7.5, liv: 'RISCHIO ACCETTABILE', col: '#2E9E5B' },
     { max: 11.0, liv: 'RISCHIO MOLTO LIEVE', col: '#C9A227' },
-    { max: 14.0, liv: 'RISCHIO LIEVE', col: '#E08A1E' },
-    { max: 22.5, liv: 'RISCHIO MEDIO', col: '#D64A3A' },
-    { max: Infinity, liv: 'RISCHIO ELEVATO', col: '#A11D1D' },
+    { max: 14.0, liv: 'RISCHIO LIEVE', col: '#E08A1E', sorv: true },
+    { max: 22.5, liv: 'RISCHIO MEDIO', col: '#D64A3A', sorv: true },
+    { max: Infinity, liv: 'RISCHIO ELEVATO', col: '#A11D1D', sorv: true },
   ];
   function _c7n(x) { const f = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isNaN(f) ? 0 : f; }
   function _c7Classify(v) { v = _c7n(v); for (const b of C7_BANDS) if (v <= b.max) return b; return C7_BANDS[C7_BANDS.length - 1]; }
@@ -7189,6 +7348,7 @@ const App = (() => {
     try { r = await call('get_cap7_schede', jp); } catch (e) { r = null; }
     if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
     state.cap7Schede = r.schede || [];
+    state.cap7MisureCat = r.misure_catalogo || [];
     state.cap7Modalita = r.modalita || 'vuoto';
     _renderCap7Native(fieldId);
   }
@@ -7227,7 +7387,7 @@ const App = (() => {
     return `<section class="c6n-group" data-c7i="${i}">
       <header class="c6n-group-hdr">
         <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
-        <span class="c6n-group-nome">${escHtml(s.gruppo_label || 'Gruppo omogeneo')}</span>
+        <span class="c6n-group-nome">${escHtml(s.gruppo_nome ? `Gruppo ${s.gruppo_label} — ${s.gruppo_nome}` : (s.gruppo_label ? `Gruppo ${s.gruppo_label}` : 'Gruppo omogeneo'))}</span>
         <span class="c6n-group-badge">${escHtml(s.fase || '—')}</span>
       </header>
       <div class="c6n-group-body">
@@ -7244,8 +7404,51 @@ const App = (() => {
           ${_c7num(i, 'molt_durata', 'Molt. durata', s.molt_durata)}
         </div>
         <div class="c7n-res" id="c7n-res-${i}"></div>
+        ${_c7MisureHtml(s, i)}
       </div>
     </section>`;
+  }
+
+  /* Prescrizioni standard «Altre misure specifiche da attuare» (valutazione libera):
+     spunta le misure da inserire nel Word + testo libero. Se il tecnico non ha mai
+     scelto (misure_sel assente) valgono i default: tutte le misure, e la sorveglianza
+     sanitaria solo se il livello di rischio calcolato la prevede. */
+  function _c7MisureSelDefault(s) {
+    const { dx, sx } = _c7Index(s);
+    const w = _c7Classify(Math.max(dx, sx));
+    const keys = (state.cap7MisureCat || []).filter(m => m.key !== 'sorveglianza').map(m => m.key);
+    if (w.sorv) keys.push('sorveglianza');
+    return keys;
+  }
+  function _c7MisureSel(s) {
+    return Array.isArray(s.misure_sel) ? s.misure_sel : _c7MisureSelDefault(s);
+  }
+  function _c7MisureHtml(s, i) {
+    const cat = state.cap7MisureCat || [];
+    if (!cat.length) return '';
+    const sel = new Set(_c7MisureSel(s));
+    return `<div class="c7n-misure">
+      <div class="c7n-misure-t">Altre misure specifiche da attuare
+        <span>Prescrizioni standard: spunta quelle da inserire nel documento</span></div>
+      ${cat.map(m => `<label class="c7n-mis">
+          <input type="checkbox" id="c7m-${i}-${m.key}" ${sel.has(m.key) ? 'checked' : ''}
+            onchange="App.onCap7Misura(${i},'${m.key}',this.checked)">
+          <span><b>${escHtml(m.etichetta)}</b> — ${escHtml(m.testo)}</span></label>`).join('')}
+      <label class="c6n-f c6n-wide"><span>Altre prescrizioni (testo libero, facoltativo)</span>
+        <textarea rows="3" placeholder="Es. misure specifiche per questa postazione…"
+          oninput="App.onCap7Libero(${i},this.value)">${escHtml(s.misure_libero || '')}</textarea></label>
+    </div>`;
+  }
+  function onCap7Misura(i, key, on) {
+    const s = (state.cap7Schede || [])[i];
+    if (!s) return;
+    const cur = new Set(_c7MisureSel(s));
+    if (on) cur.add(key); else cur.delete(key);
+    s.misure_sel = [...cur];          // da ora la scelta è esplicita
+  }
+  function onCap7Libero(i, val) {
+    const s = (state.cap7Schede || [])[i];
+    if (s) s.misure_libero = val;
   }
 
   function onCap7Field(i, field, val) {
@@ -7263,6 +7466,10 @@ const App = (() => {
     const { dx, sx } = _c7Index(s);
     const cdx = _c7Classify(dx), csx = _c7Classify(sx);
     const fmt = v => (Math.round(_c7n(v) * 100) / 100).toString().replace('.', ',');
+    if (!Array.isArray(s.misure_sel)) {     // scelta non ancora esplicita → segue il livello
+      const cb = document.getElementById(`c7m-${i}-sorveglianza`);
+      if (cb) cb.checked = _c7MisureSel(s).includes('sorveglianza');
+    }
     el.innerHTML =
       `<div class="c7n-idx-cell"><span>Indice OCRA · arto DESTRO (dominante)</span>
         <b style="background:${cdx.col}">${fmt(dx)}</b><i>${cdx.liv}</i></div>
@@ -7953,7 +8160,7 @@ const App = (() => {
       f.type !== 'table' && f.type !== 'checkbox_group' && f.type !== 'checkbox' &&
       f.type !== 'cap2_editor' && f.type !== 'cap4_editor' && f.type !== 'procedure_picker' &&
       f.type !== 'cap6_editor' && f.type !== 'cap20_editor' && f.type !== 'cap10_editor' &&
-      f.type !== 'cap7_editor' && f.type !== 'cap11_editor' &&
+      f.type !== 'cap7_editor' && f.type !== 'cap6b_editor' && f.type !== 'cap11_editor' &&
       f.type !== 'cap17_editor' && f.type !== 'cap21_editor');
 
     let hasError = false;
@@ -8789,6 +8996,16 @@ const App = (() => {
       data['cap6_editor'] = cap6;
     }
 
+    // Normalizza cap6b_editor (gruppi → modelli traino/spinta)
+    const cap6b = data['cap6b_editor'];
+    if (cap6b && typeof cap6b === 'object') {
+      if (!Array.isArray(cap6b.gruppi)) cap6b.gruppi = [];
+      cap6b.gruppi.forEach(g => {
+        g.modelli = (g.modelli || []).filter(k => typeof k === 'string' && k);
+      });
+      data['cap6b_editor'] = cap6b;
+    }
+
     // Normalizza cap7_editor (gruppi → schede-attività)
     const cap7 = data['cap7_editor'];
     if (cap7 && typeof cap7 === 'object') {
@@ -9499,7 +9716,7 @@ const App = (() => {
     onCap14ProdName, onCap14ProdRemove, onCap14ProdAdd,
     onCap14ProdSchedaSearch, onCap14ProdSchedaPick, onCap14ProdUseSuggested,
     // Cap7 editor
-    onC7SchedaToggle, onCap7Field, saveCap7Schede,
+    onC7SchedaToggle, onC6bModelloToggle, onCap7Field, onCap7Misura, onCap7Libero, saveCap7Schede,
     // Cap17 editor
     onC17Settore,
     // Cap21 editor
