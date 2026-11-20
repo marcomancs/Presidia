@@ -4123,3 +4123,128 @@ html[data-theme="dark"] .theme-icon-moon { display: block; }
 .c7n-mis input { margin-top: 3px; flex: 0 0 auto; }
 .c7n-misure textarea { width: 100%; resize: vertical; font: inherit; padding: 8px 10px;
   border: 1px solid var(--gray-300, #c3cad3); border-radius: 8px; background: var(--surface, #fff); color: inherit; }
+
+
+/* Cap6 — specchietto dati del tecnico, campi mancanti, pulsante «Seleziona template» */
+.c6n-dati { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--gray-200, #d9dee5);
+  border-left: 4px solid var(--blue-800, #103D5E); border-radius: 8px; background: var(--gray-50, #f6f8fa); }
+.c6n-dati-t { font-weight: 700; font-size: 12px; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--blue-800, #103D5E); margin-bottom: 6px; }
+.c6n-dati-l { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; }
+.c6n-dati-l li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px;
+  border-bottom: 1px dashed var(--gray-200, #d9dee5); padding: 2px 0; }
+.c6n-dati-l li span { color: var(--gray-600, #5b6673); }
+.c6n-dati-l li b { text-align: right; }
+.c6n-dati-l li.c6n-dati-no b { color: #9a5b00; background: #fff3cd; border-radius: 4px; padding: 0 6px; font-weight: 600; }
+.c6n-dati-warn, .c6n-dati-fatt { margin-top: 8px; font-size: 12px; line-height: 1.4; color: var(--gray-700, #424d5a); }
+.c6n-dati-warn { color: #7a4a00; }
+.c6n-f--miss > span::after { content: " · dato mancante"; color: #9a5b00; font-weight: 600; }
+.c6n-f--miss input, .c6n-f--miss select { background: #fff8e1; border-color: #e0a800; }
+.c6n-group-tpl { margin-left: auto; padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.7); background: rgba(255,255,255,.16); color: #fff; font-size: 12px; font-weight: 600; }
+.c6n-group-tpl:hover { background: rgba(255,255,255,.3); }
+.c6-ovr { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between;
+  margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--blue-50, #e7eef4); font-size: 13px; }
+.c6-ovr .c6n-group-tpl { margin-left: 0; color: var(--blue-800, #103D5E); background: var(--surface, #fff); border-color: var(--blue-800, #103D5E); }
+
+
+/* Cap6/Cap7 — aggiunta valutazione specifica, chip back office, blocco tempi */
+.c7n-add { margin: 14px 0 6px; }
+.c7n-add-form { margin-top: 10px; padding: 12px 14px; border: 1px dashed var(--blue-800, #103D5E);
+  border-radius: 10px; background: var(--gray-50, #f6f8fa); }
+.c7n-add-act { display: flex; gap: 8px; margin-top: 10px; }
+.c6a-eta { display: flex; gap: 14px; flex-wrap: wrap; padding: 6px 0; font-size: 13px; }
+.c6a-eta label { display: flex; gap: 6px; align-items: center; }
+.c6n-man-badge { margin-left: 8px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  background: #fff3cd; color: #7a4a00; }
+.c6n-man-del { margin-left: 6px !important; }
+
+
+/* ── Avviso «nuova versione» a TUTTO SCHERMO ── (niente backdrop-filter: lento su Mac Intel) */
+.upd-ovl { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(8, 28, 44, .90); animation: updFade .25s ease-out; }
+@keyframes updFade { from { opacity: 0; } to { opacity: 1; } }
+.upd-card { width: min(580px, 100%); max-height: 94vh; overflow: auto; text-align: center;
+  background: var(--surface, #fff); color: var(--text, #1b2733); border-radius: 20px; padding: 30px 34px 26px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45); }
+.upd-logo { height: 54px; width: auto; margin: 0 auto 14px; display: block; }
+.upd-prova { display: inline-block; margin-bottom: 10px; padding: 3px 12px; border-radius: 6px; font-size: 11px;
+  font-weight: 700; letter-spacing: .04em; background: #fff3cd; color: #7a4a00; }
+.upd-pill { display: inline-block; padding: 4px 14px; border-radius: 999px; font-size: 11px; font-weight: 800;
+  letter-spacing: .08em; background: var(--blue-800, #103D5E); color: #fff; }
+.upd-h { margin: 12px 0 6px; font-size: 26px; line-height: 1.2; color: var(--blue-800, #103D5E); }
+.upd-sub { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--gray-600, #5b6673); }
+.upd-box { text-align: left; margin: 0 0 12px; padding: 12px 16px; border-radius: 12px;
+  background: var(--gray-50, #f6f8fa); border: 1px solid var(--gray-200, #d9dee5); }
+.upd-box-t { font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--blue-800, #103D5E); margin-bottom: 6px; }
+.upd-list, .upd-steps ol { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.55; }
+.upd-act { display: flex; gap: 10px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+.upd-go { min-width: 170px; padding: 11px 22px; font-size: 15px; }
+.upd-later { min-width: 120px; }
+.upd-oblig { margin: 12px 0 0; font-size: 12px; font-weight: 700; color: #a11d1d; }
+
+
+/* ── Cap7 · blocco «Durata del turno e tempi di ciclo» (compatto, a gruppi) ── */
+.c7n-tempi { margin: 10px 0; border: 1px solid var(--gray-200, #d9dee5); border-radius: 10px; background: var(--surface, #fff); }
+.c7n-tempi > summary { cursor: pointer; padding: 9px 14px; font-weight: 700; color: var(--blue-800, #103D5E);
+  display: flex; align-items: center; gap: 10px; }
+.c7n-opz { font-weight: 600; font-size: 11px; padding: 2px 9px; border-radius: 999px;
+  background: var(--gray-100, #eef1f5); color: var(--gray-600, #5b6673); }
+.c7n-opz--on { background: #dff3e6; color: #1f7a3d; }
+.c7t-hint { margin: 0; padding: 0 14px 8px; font-size: 12px; line-height: 1.45; color: var(--gray-600, #5b6673); }
+.c7t-g { padding: 6px 14px 8px; border-top: 1px solid var(--gray-200, #d9dee5); }
+.c7t-gt { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--blue-800, #103D5E); margin-bottom: 6px; }
+.c7t-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+.c7t-f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--gray-700, #424d5a); }
+.c7t-f > span { font-weight: 600; line-height: 1.2; }
+.c7t-f em { font-style: normal; font-weight: 400; color: var(--gray-500, #7a8591); }
+.c7t-f input, .c7t-f select { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; font-size: 13px;
+  border: 1px solid var(--gray-300, #c3cad3); border-radius: 7px; background: var(--surface, #fff); color: inherit; }
+.c7t-f input:focus, .c7t-f select:focus { outline: 2px solid var(--blue-800, #103D5E); outline-offset: 0; }
+.c7n-tempi-res { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px 12px;
+  border-top: 1px solid var(--gray-200, #d9dee5); background: var(--gray-50, #f6f8fa); border-radius: 0 0 10px 10px; }
+.c7n-pill { display: inline-flex; flex-direction: column; padding: 4px 12px; border-radius: 8px; background: var(--blue-50, #e7eef4); }
+.c7n-pill i { font-style: normal; font-size: 10.5px; color: var(--gray-600, #5b6673); }
+.c7n-pill b { font-size: 15px; color: var(--blue-800, #103D5E); }
+.c7n-pill--vuota { background: var(--gray-100, #eef1f5); }
+.c7n-pill--vuota b { color: var(--gray-400, #9aa4af); }
+.c7n-appl { font-size: 12.5px; color: var(--blue-800, #103D5E); }
+
+/* ── Cap6 · «Dati del tecnico esterno» (una riga + una nota, non otto etichette) ── */
+.c6n-dati { margin: 8px 0 12px; padding: 9px 12px; border: 1px solid var(--gray-200, #d9dee5);
+  border-left: 4px solid var(--blue-800, #103D5E); border-radius: 8px; background: var(--gray-50, #f6f8fa); }
+.c6n-dati-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.c6n-dati-t { font-weight: 800; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--blue-800, #103D5E); margin-right: 4px; }
+.c6n-dato { display: inline-flex; gap: 5px; align-items: baseline; padding: 2px 10px; border-radius: 999px;
+  background: var(--surface, #fff); border: 1px solid var(--gray-200, #d9dee5); font-size: 12.5px; }
+.c6n-dato i { font-style: normal; color: var(--gray-500, #7a8591); font-size: 11px; }
+.c6n-dato b { color: var(--blue-800, #103D5E); }
+.c6n-dati-nessuno { font-size: 12.5px; color: var(--gray-600, #5b6673); }
+.c6n-dati-warn { margin-top: 7px; font-size: 12px; line-height: 1.4; color: #7a4a00; }
+.c6n-dati-warn b { color: #7a4a00; }
+
+
+/* Cap6 · titolo «Come si usa la sezione?» + gruppi delle schede di calcolo chiudibili */
+.c6-intro-t { font-weight: 800; font-size: 13px; letter-spacing: .02em; color: var(--blue-800, #103D5E); margin-bottom: 4px; }
+details.c6n-group > summary.c6n-group-hdr { list-style: none; cursor: pointer; user-select: none; }
+details.c6n-group > summary.c6n-group-hdr::-webkit-details-marker { display: none; }
+details.c6n-group > summary.c6n-group-hdr .c6n-group-tpl { margin-left: 0; }
+details.c6n-group > summary.c6n-group-hdr .c6n-group-nome { flex: 1; }
+.c6n-group-caret { flex: 0 0 auto; width: 9px; height: 9px; margin-left: 4px; border-right: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff; transform: rotate(45deg) translateY(-2px); transition: transform .15s; }
+details.c6n-group[open] > summary .c6n-group-caret { transform: rotate(225deg) translateY(-2px); }
+
+/* ── Cap6B — schede libere Traino e Spinta (blocchi di calcolo) ── */
+.c6b-blocks { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.c6b-blk { border: 1px solid var(--gray-200); border-radius: 10px; overflow: hidden; background: #fff; }
+.c6b-blk-t { background: var(--blue-800, #103D5E); color: #fff; font-weight: 700; font-size: 13px;
+  padding: 8px 14px; display: flex; justify-content: space-between; gap: 10px; }
+.c6b-blk-t span { font-weight: 600; opacity: .85; font-size: 12px; }
+.c6b-blk-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 12px 14px; }
+.c6b-rac, .c6b-ir { display: flex; flex-direction: column; gap: 4px; justify-content: center;
+  padding: 8px 12px; border-radius: 8px; font-size: 11.5px; font-weight: 700; }
+.c6b-rac { background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--blue-800, #103D5E); }
+.c6b-rac b, .c6b-ir b { font-size: 18px; font-weight: 800; }
+.c6b-ir { color: #fff; }

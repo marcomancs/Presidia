@@ -250,7 +250,7 @@ const App = (() => {
     // Notifica (SOLO informativa) se è uscita una nuova versione su GitHub:
     // non scarica nulla, mostra un avviso con il link al repo. Ritardato per
     // non rallentare l'avvio; eventuali errori di rete sono silenziosi.
-    setTimeout(() => { _checkUpdates(); }, delay + 1500);
+    setTimeout(() => { _checkUpdates(); _avviaControlloPeriodico(); }, delay + 1500);
   }
 
   function waitForPywebview() {    return new Promise(resolve => {
@@ -6065,7 +6065,13 @@ const App = (() => {
   /* Modalità di valutazione MMC di UN gruppo: 'template' | 'libera' | null.
      Legame per NOME gruppo via valutazioni_gruppi; modalita_gruppi ha come chiave
      il nome OPPURE l'id del gruppo (l'id si risolve tramite valutazioni_gruppi). */
+  // Gruppi per cui il back-office ha premuto «Seleziona template» (solo Cap6/mmc).
+  function _cap6Override() {
+    const v = state.currentClient && state.currentClient.cap6_template_gruppi;
+    return Array.isArray(v) ? v : [];
+  }
   function _cap6ModoGruppo(nome, root) {
+    if ((!root || root === 'mmc') && _cap6Override().includes(nome)) return 'template';
     const mmc = (state.jsonRaw && state.jsonRaw[root || 'mmc']) || {};
     const norm = t => {
       t = String(t || '').trim().toLowerCase();
@@ -6100,9 +6106,21 @@ const App = (() => {
       const t = String((vg && vg.tipo_valutazione) || '').trim().toLowerCase();
       if (t) vals.add(t);
     });
-    const hasSchede = Array.isArray(mmc.schede) && mmc.schede.length > 0;
-    const hasTemplate = vals.has('template');
-    const hasAppro = ['approfondita', 'libera', 'completa', 'approfondito'].some(k => vals.has(k)) || hasSchede;
+    const ov = _cap6Override();
+    let hasSchede = Array.isArray(mmc.schede) && mmc.schede.length > 0;
+    let hasTemplate = vals.has('template');
+    let hasAppro = ['approfondita', 'libera', 'completa', 'approfondito'].some(k => vals.has(k)) || hasSchede;
+    if (ov.length) {
+      // gruppi forzati a template: non contano più come valutazione libera
+      hasTemplate = true;
+      const liberi = (mmc.valutazioni_gruppi || []).filter(vg => vg && vg.gruppo_nome && !ov.includes(vg.gruppo_nome)
+        && ['approfondita', 'libera', 'completa', 'approfondito'].includes(String(vg.tipo_valutazione || '').trim().toLowerCase()));
+      hasSchede = (mmc.schede || []).some(sc => {
+        const m = (sc && sc.mansioni) || [];
+        return !(m.length && m.every(x => ov.includes(x)));
+      });
+      hasAppro = liberi.length > 0 || hasSchede;
+    }
     if (hasTemplate && hasAppro) return 'misto';
     if (hasTemplate) return 'template';
     if (hasAppro) return 'approfondita';
@@ -6148,8 +6166,9 @@ const App = (() => {
          <p><b>Cosa succede in automatico.</b> In esportazione tutte le schede vengono disegnate in modo nativo nel Word, senza Excel.</p>`);
     }
     return _apprBanner('vuoto', 'Nessun dato',
-      'Il file di questo cliente non contiene dati di <b>movimentazione manuale dei carichi</b> per questo capitolo.',
-      `<p>Il tecnico esterno non ha compilato la sezione sulla movimentazione manuale dei carichi. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede di calcolo. Se invece il rischio c'è, va richiesta al tecnico la valutazione.</p>`);
+      'Il file non contiene dati di <b>movimentazione manuale dei carichi</b>: puoi comunque scegliere un <b>template</b> o aggiungere una <b>valutazione specifica</b>.',
+      `<p>Il tecnico esterno non ha compilato la sezione sulla movimentazione manuale dei carichi. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede di calcolo.</p>
+       <p><b>Se il rischio c'è puoi comunque procedere da qui:</b> scegli i <b>template</b> per ogni gruppo omogeneo nell'elenco, oppure usa <b>«Aggiungi valutazione specifica»</b> in fondo per inserire tu i dati (peso, frequenza, durata, distanza…).</p>`);
   }
 
   function buildCap6Editor(fieldId, data) {
@@ -6181,7 +6200,7 @@ const App = (() => {
 
     return `<div class="c6-editor" id="c6-editor-${fieldId}">
       ${banner}
-      <div class="c6-intro">Apri ogni <b>gruppo omogeneo</b>: sotto trovi le <b>informazioni scritte dal tecnico esterno</b> (mansione, attività, addetti e i carichi valutati) per aiutarti a scegliere. In base a queste, seleziona le <b>movimentazioni</b> svolte e, per ciascuna, le <b>varianti demografiche</b> (sesso ed età). Ogni variante genera una scheda di valutazione (n° <b>N-S</b>); ogni movimentazione un foglio di calcolo del trasporto (n° <b>N-T</b>).</div>
+      <div class="c6-intro"><div class="c6-intro-t">Come si usa la sezione?</div>Apri ogni <b>gruppo omogeneo</b>: sotto trovi le <b>informazioni scritte dal tecnico esterno</b> (mansione, attività, addetti e i carichi valutati) per aiutarti a scegliere. In base a queste, seleziona le <b>movimentazioni</b> svolte e, per ciascuna, le <b>varianti demografiche</b> (sesso ed età). Ogni variante genera una scheda di valutazione (n° <b>N-S</b>); ogni movimentazione un foglio di calcolo del trasporto (n° <b>N-T</b>).</div>
       ${gruppi.map((g, gi) => _buildC6Gruppo(fieldId, gi, g, cat)).join('')}
       <div class="c6-tot">Totale: <b>${totSchede}</b> scheda/e di valutazione selezionata/e</div>
     </div>`;
@@ -6191,12 +6210,17 @@ const App = (() => {
     const movs = g.movimentazioni || [];
     const nSchede = movs.reduce((b, m) => b + (m.varianti || []).length, 0);
     const nMov = movs.filter(m => (m.varianti || []).length).length;
-    const open = nSchede > 0 ? ' open' : '';
-    return `<details class="c6-gruppo"${open}>
+    // Si apre da solo SOLO il primo gruppo; poi vale ciò che l'utente apre/chiude
+    // (lo stato si conserva anche quando la maschera si ridisegna).
+    const open = (state.cap6OpenTop ? state.cap6OpenTop.has(g.nome) : gi === 0) ? ' open' : '';
+    return `<details class="c6-gruppo"${open} data-nome="${escAttr(g.nome || '')}" ontoggle="App.c6TopToggle(this)">
       <summary class="c6-gruppo-hdr">
         <span class="c6-gruppo-tit"><b>Gruppo ${g.numero}</b> — ${escHtml(g.nome || '')}</span>
         <span class="c6-gruppo-badge${nSchede ? ' on' : ''}">${nMov} mov · ${nSchede} scheda/e</span>
       </summary>
+      ${_cap6Override().includes(g.nome) ? `<div class="c6-ovr">
+        <span>Per questo gruppo il tecnico esterno aveva fatto una <b>valutazione specifica</b>: qui si usano invece i modelli del catalogo.</span>
+        <button type="button" class="c6n-group-tpl" onclick="App.cap6UsaTemplate('${fieldId}', 0, false, ['${escAttr(g.nome)}'])">Torna alla valutazione specifica</button></div>` : ''}
       ${_c6InfoPanel(g)}
       <div class="c6-mov-hdr">Seleziona le movimentazioni svolte e le varianti (sesso · età)</div>
       <div class="c6-mov-list">
@@ -6219,6 +6243,51 @@ const App = (() => {
       <div class="c6-mov-name">${escHtml(m.nome)}</div>
       <div class="c6-mov-vars">${chips}</div>
     </div>`;
+  }
+
+  /* «Seleziona template» (gruppo con valutazione specifica) e ritorno. Per i gruppi
+     scelti la valutazione specifica del tecnico NON viene usata: valgono i modelli
+     del catalogo scelti nell'editor. Reversibile; salvato per cliente. */
+  // Apertura di un gruppo nell'elenco SOPRA → si apre sotto la scheda di calcolo del
+  // gruppo corrispondente e si chiudono le altre (accordion). Lo stato di ogni gruppo
+  // aperto dall'utente si conserva anche se la maschera si ridisegna.
+  function c6TopToggle(el) {
+    state.cap6OpenTop = new Set([...document.querySelectorAll('details.c6-gruppo[data-nome]')]
+      .filter(d => d.open).map(d => d.dataset.nome));
+    if (!el.open) return;
+    const nome = String(el.dataset.nome || '').trim();
+    const calc = [...document.querySelectorAll('details.c6n-group[data-key]')];
+    const hit = calc.find(d => {
+      try { return JSON.parse(d.dataset.nomi || '[]').some(x => String(x).trim() === nome); }
+      catch (e) { return false; }
+    });
+    if (!hit) return;
+    calc.forEach(d => { d.open = (d === hit); });
+    state.cap6OpenCalc = new Set([hit.dataset.key]);
+  }
+  function c6CalcToggle() {
+    state.cap6OpenCalc = new Set([...document.querySelectorAll('details.c6n-group[data-key]')]
+      .filter(d => d.open).map(d => d.dataset.key));
+  }
+
+  async function cap6UsaTemplate(fieldId, gi, on, nomiDiretti) {
+    const c = state.currentClient;
+    if (!c) return;
+    const nomi = nomiDiretti || (state.cap6GroupMans || [])[gi] || [];
+    if (!nomi.length) return;
+    const cur = new Set(Array.isArray(c.cap6_template_gruppi) ? c.cap6_template_gruppi : []);
+    nomi.forEach(n => on ? cur.add(n) : cur.delete(n));
+    c.cap6_template_gruppi = [...cur];
+    if (c.json_path) {
+      try { await call('imposta_cap6_template_gruppo', c.json_path, nomi, !!on); } catch (e) {}
+    }
+    // ricostruisce l'elenco gruppi dell'editor (mantiene le scelte già fatte) e le schede libere
+    initCap6Editor(fieldId, state.formValues[fieldId]);
+    state.cap6Schede = null;
+    _c6Rerender(fieldId);
+    saveChapterDraft();
+    toast(on ? 'Gruppo passato ai template: scegli i modelli qui sotto'
+             : 'Ripristinata la valutazione specifica del tecnico', 'success', 3200);
   }
 
   function onC6VarToggle(fieldId, gi, movKey, varKey) {
@@ -6249,6 +6318,7 @@ const App = (() => {
     try { r = await call('get_cap6_schede', jp); } catch (e) { r = null; }
     if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
     state.cap6Tables = r.tables || {};
+    if (state.currentClient && Array.isArray(r.override_template)) state.currentClient.cap6_template_gruppi = r.override_template;
     state.cap6Schede = r.schede || [];
     _renderCap6Native(fieldId);
   }
@@ -6261,10 +6331,10 @@ const App = (() => {
       const mod = _cap6Modalita();
       if (mod === 'template' || mod === 'misto') {
         box.innerHTML = `<div class="cap2-section-label">Schede di calcolo</div>
-          <p class="cap14-note">Approccio <b>template</b>: le schede di calcolo vengono lette dai modelli del catalogo e <b>disegnate in modo nativo all'esportazione</b> (nessun Excel). Seleziona movimentazioni e varianti qui sopra.</p>`;
+          <p class="cap14-note">Approccio <b>template</b>: le schede di calcolo vengono lette dai modelli del catalogo e <b>disegnate in modo nativo all'esportazione</b> (nessun Excel). Seleziona movimentazioni e varianti qui sopra.</p>${_cap6AddHtml(fieldId)}`;
       } else {
         box.innerHTML = `<div class="cap2-section-label">Schede di calcolo</div>
-          <p class="cap14-note">Nessuna scheda MMC nel JSON del cliente (sezione <code>mmc.schede</code>).</p>`;
+          <p class="cap14-note">Nessuna valutazione specifica nel file del cliente. Scegli i template qui sopra oppure aggiungi una valutazione specifica.</p>${_cap6AddHtml(fieldId)}`;
       }
       return;
     }
@@ -6278,20 +6348,35 @@ const App = (() => {
       if (!g) { g = { nome: (s.gruppo || '').trim(), items: [] }; byKey.set(key, g); groups.push(g); }
       g.items.push({ s, i });
     });
-    const groupsHtml = groups.map((g, gi) => `
-      <section class="c6n-group">
-        <header class="c6n-group-hdr">
+    // nomi dei gruppi di ogni blocco (per il pulsante «Seleziona template»)
+    state.cap6GroupMans = groups.map(g => {
+      const f = (g.items[0] && g.items[0].s) || {};
+      return (Array.isArray(f.mansioni) && f.mansioni.length) ? f.mansioni : (g.nome ? [g.nome] : []);
+    });
+    // Aperto solo il PRIMO gruppo; quando si apre un gruppo nell'elenco sopra si apre
+    // quello corrispondente (vedi c6TopToggle). Lo stato si conserva nei ridisegni.
+    const groupsHtml = groups.map((g, gi) => {
+      const key = g.nome || '—';
+      const open = (state.cap6OpenCalc ? state.cap6OpenCalc.has(key) : gi === 0) ? ' open' : '';
+      return `
+      <details class="c6n-group c6n-group--acc"${open} data-key="${escAttr(key)}" data-nomi="${escAttr(JSON.stringify(state.cap6GroupMans[gi] || []))}" ontoggle="App.c6CalcToggle(this)">
+        <summary class="c6n-group-hdr">
           <span class="c6n-group-tag">Gruppo ${gi + 1}</span>
           <span class="c6n-group-nome">${escHtml(g.nome || 'Gruppo omogeneo')}</span>
           <span class="c6n-group-badge">${g.items.length} scheda/e</span>
-        </header>
+          <button type="button" class="c6n-group-tpl" title="Usa i modelli del catalogo al posto della valutazione specifica del tecnico"
+            onclick="event.preventDefault();event.stopPropagation();App.cap6UsaTemplate('${fieldId}', ${gi}, true)">Seleziona template</button>
+          <span class="c6n-group-caret" aria-hidden="true"></span>
+        </summary>
         <div class="c6n-group-body">
           ${g.items.map(({ s, i }) => s.tipo === 'T' ? _cap6SchedaTHtml(s, i) : _cap6SchedaSHtml(s, i)).join('')}
         </div>
-      </section>`).join('');
+      </details>`;
+    }).join('');
 
-    box.innerHTML = `<div class="cap2-section-label">Schede di calcolo — MMC (calcolo nel software, esportate come tabella nel Word)</div>
+    box.innerHTML = `<div class="cap2-section-label">Schede di calcolo — MMC</div>
       ${groupsHtml}
+      ${_cap6AddHtml(fieldId)}
       <div class="c6n-misure-bar">
         <button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.openCap6Misure()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -6471,22 +6556,33 @@ const App = (() => {
     const idx = rwl > 0 ? Math.round((+s.peso || 0) / rwl * 100) / 100 : null;
     const idxCls = (idx !== null && idx <= 1) ? 'ok' : 'ko';
     const T = state.cap6Tables || {};
-    const freqLbl = (T.FM_FREQ || [])[s.fm_freq_idx];
+    const etaLbl = (T.CP_ETA_LABEL || {})[s.eta] || s.eta;
+    const freqOpts = (T.FM_FREQ || []).map((f, k) =>
+      `<option value="${k}"${k === s.fm_freq_idx ? ' selected' : ''}>${escHtml(String(f))}</option>`).join('');
+    const durOpts = (T.FM_DURATA || []).map(d =>
+      `<option value="${escAttr(d)}"${d === s.fm_durata ? ' selected' : ''}>${escHtml((T.FM_DURATA_LABEL || {})[d] || d)}</option>`).join('');
     return `<div class="c6n-scheda" data-i="${i}">
       <div class="c6n-hdr">
         <span class="c6n-hdr-n">Scheda ${escHtml(s.n)}</span>
         <span class="c6n-hdr-t">Sollevamento / abbassamento</span>
-        <span class="c6n-sex">${escHtml(s.sesso)} · ${escHtml(s.eta)}</span>
+        <span class="c6n-sex">${escHtml(s.sesso)} · ${escHtml(etaLbl)}</span>
+        ${_cap6ManualeHtml(s)}
       </div>
+      ${_cap6DatiTecnicoHtml(s, 'S')}
       <div class="c6n-row2">
         <label class="c6n-f c6n-wide"><span>Descrizione attività</span>
           <input type="text" value="${escAttr(s.descrizione || '')}" onchange="App.onCap6Field(${i},'descrizione',this.value)"></label>
         <label class="c6n-f"><span>Carico</span>
           <input type="text" value="${escAttr(s.carico || '')}" onchange="App.onCap6Field(${i},'carico',this.value)"></label>
-        <label class="c6n-f"><span>Peso effettivo (kg)</span>
+        <label class="c6n-f${_c6Miss(s, 'peso')}"><span>Peso effettivo (kg)</span>
           <input type="number" value="${escAttr(s.peso ?? '')}" onchange="App.onCap6Field(${i},'peso',this.value)"></label>
       </div>
-      <div class="c6n-note">Frequenza/durata (dal JSON): <b>${escHtml(String(freqLbl))}</b> azioni/min · ${escHtml(s.fm_durata)}</div>
+      <div class="c6n-row2">
+        <label class="c6n-f${_c6Miss(s, 'frequenza')}"><span>Frequenza (azioni/min)</span>
+          <select onchange="App.onCap6Field(${i},'fm_freq_idx',this.value)">${freqOpts}</select></label>
+        <label class="c6n-f${_c6Miss(s, 'durata')}"><span>Durata del turno</span>
+          <select onchange="App.onCap6Field(${i},'fm_durata',this.value)">${durOpts}</select></label>
+      </div>
       <div class="c6n-grid">
         ${_cap6Sel(i, 'VM', 'VM', s.sel?.VM ?? 8, 'A · Altezza mani (cm)')}
         ${_cap6Sel(i, 'DM', 'DM', s.sel?.DM ?? 0, 'B · Distanza verticale (cm)')}
@@ -6506,14 +6602,21 @@ const App = (() => {
       <div class="c6n-hdr c6n-hdr--t">
         <span class="c6n-hdr-n">Scheda ${escHtml(s.n)}</span>
         <span class="c6n-hdr-t">Trasporto in piano</span>
+        ${_cap6ManualeHtml(s)}
       </div>
-      <div class="c6n-note">Dal JSON — peso: <b>${escAttr(s.peso ?? '')}</b> kg · sollevamenti/min: <b>${escAttr(s.sollevamenti_min ?? '')}</b> · ore turno: <b>${escAttr(s.ore_turno ?? '')}</b></div>
+      ${_cap6DatiTecnicoHtml(s, 'T')}
+      <div class="c6n-row2">
+        <label class="c6n-f${_c6Miss(s, 'peso')}"><span>Peso dell'oggetto (kg)</span>
+          <input type="number" step="any" value="${escAttr(s.peso ?? '')}" onchange="App.onCap6Field(${i},'peso',this.value)"></label>
+        <label class="c6n-f${_c6Miss(s, 'frequenza')}"><span>Sollevamenti al minuto</span>
+          <input type="number" step="any" value="${escAttr(s.sollevamenti_min ?? '')}" onchange="App.onCap6Field(${i},'sollevamenti_min',this.value)"></label>
+        <label class="c6n-f${_c6Miss(s, 'durata')}"><span>Ore di turno</span>
+          <input type="number" step="any" value="${escAttr(s.ore_turno ?? '')}" onchange="App.onCap6Field(${i},'ore_turno',this.value)"></label>
+      </div>
       <div class="c6n-grid">
         ${_cap6Sel(i, 'MCUM', 'MCUM', s.sel?.MCUM ?? 0, 'Massa cumulativa (ore)')}
         ${_cap6Sel(i, 'DIST', 'T_DIST', s.sel?.DIST ?? 0, 'Distanza trasporto')}
         ${_cap6Sel(i, 'POS', 'T_POS', s.sel?.POS ?? 0, 'Posizione mano')}
-        ${_cap6Sel(i, 'COND', 'T_COND', s.sel?.COND ?? 0, 'Condizioni (rif.)')}
-        ${_cap6Sel(i, 'ARTI', 'T_ARTI', s.sel?.ARTI ?? 0, 'Arti (rif.)')}
       </div>
       <div class="c6n-res" id="c6n-res-${i}">${_cap6ResTInner(r)}</div>
     </div>`;
@@ -6527,12 +6630,145 @@ const App = (() => {
     _cap6NativeSave();
   }
 
+  /* ── Cap6: «Aggiungi valutazione specifica» (anche con la sezione vuota) ── */
+  function _cap6ManualeHtml(s) {
+    return s.manuale
+      ? `<span class="c6n-man-badge">Aggiunta dal back office</span>
+         <button type="button" class="c6n-group-tpl c6n-man-del" onclick="App.cap6Rimuovi('${escAttr(_cap6FieldId())}','${escAttr(s.man_id || '')}')">Rimuovi</button>`
+      : '';
+  }
+  function _cap6AddHtml(fieldId) {
+    const nomi = _availableGroupNames();
+    const opts = nomi.map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
+    const inp = (id, lbl, type, ph) => `<label class="c6n-f"><span>${lbl}</span>
+      <input type="${type || 'text'}" ${type === 'number' ? 'step="any"' : ''} id="c6a-${id}-${fieldId}" placeholder="${ph || ''}"></label>`;
+    return `<div class="c7n-add">
+      <button type="button" class="btn btn-outline" onclick="App.cap6ToggleAdd('${fieldId}')">+ Aggiungi valutazione specifica</button>
+      <div class="c7n-add-form" id="c6a-form-${fieldId}" hidden>
+        <div class="c6n-row2">
+          <label class="c6n-f"><span>Gruppo omogeneo</span><select id="c6a-gr-${fieldId}">${opts || '<option value="">—</option>'}</select></label>
+          <label class="c6n-f"><span>Sesso</span><select id="c6a-sx-${fieldId}">
+            <option value="M">Maschi</option><option value="F">Femmine</option><option value="MF">Maschi e femmine</option></select></label>
+          <label class="c6n-f"><span>Fascia d'età</span><span class="c6a-eta">
+            <label><input type="checkbox" id="c6a-e1-${fieldId}" checked> 20 - 45 anni</label>
+            <label><input type="checkbox" id="c6a-e2-${fieldId}"> &lt; 20 e &gt; 45 anni</label></span></label>
+        </div>
+        <div class="c6n-row2">
+          ${inp('de', 'Descrizione attività')}${inp('ca', 'Carico (denominazione)')}
+        </div>
+        <div class="c6n-row2">
+          ${inp('pe', 'Peso (kg)', 'number')}${inp('fr', 'Frequenza (azioni/min)', 'number')}${inp('du', 'Ore di turno', 'number')}
+          ${inp('np', 'N° persone', 'number')}${inp('di', 'Distanza trasporto (m)', 'number')}
+        </div>
+        <div class="c7n-add-act">
+          <button type="button" class="btn btn-primary" onclick="App.cap6Aggiungi('${fieldId}')">Aggiungi valutazione</button>
+          <button type="button" class="btn btn-ghost" onclick="App.cap6ToggleAdd('${fieldId}')">Annulla</button>
+        </div>
+      </div></div>`;
+  }
+  function cap6ToggleAdd(fieldId) {
+    const f = document.getElementById(`c6a-form-${fieldId}`);
+    if (f) f.hidden = !f.hidden;
+  }
+  async function cap6Aggiungi(fieldId) {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    const g = id => (document.getElementById(`c6a-${id}-${fieldId}`) || {});
+    const eta = [];
+    if (g('e1').checked) eta.push('20_45');
+    if (g('e2').checked) eta.push('sotto_20');
+    if (!g('gr').value) { toast('Scegli il gruppo omogeneo', 'error'); return; }
+    if (!eta.length) { toast('Scegli almeno una fascia d\'età', 'error'); return; }
+    if (!String(g('pe').value).trim()) { toast('Indica almeno il peso del carico', 'error'); return; }
+    const voce = {
+      mansioni: [g('gr').value], sesso: g('sx').value, eta,
+      descrizione: g('de').value, carico_denominazione: g('ca').value,
+      sol_peso_effettivo: g('pe').value, frequenza_sollevamenti_min: g('fr').value,
+      durata_turno_ore: g('du').value, num_persone: g('np').value, distanza_trasporto_m: g('di').value,
+    };
+    const r = await call('aggiungi_cap6_valutazione', jp, voce).catch(() => null);
+    if (r && r.ok) {
+      toast('Valutazione aggiunta: controlla i fattori nelle schede', 'success');
+      state.cap6Schede = null;
+      _loadCap6Native(fieldId);
+    } else toast((r && r.error) || 'Errore', 'error');
+  }
+  async function cap6Rimuovi(fieldId, sid) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !sid || !confirm('Rimuovere questa valutazione aggiunta a mano (schede S e T)?')) return;
+    const r = await call('rimuovi_cap6_valutazione', jp, sid).catch(() => null);
+    if (r && r.ok) { state.cap6Schede = null; _loadCap6Native(fieldId); }
+  }
+
+  // Indice «massa cumulativa» dalle ore di turno (come cap6_niosh.idx_mcum_da_ore).
+  function _cap6IdxMcum(ore) {
+    const o = parseFloat(String(ore).replace(',', '.'));
+    if (isNaN(o)) return 6;
+    if (o <= 0) return 0;
+    const k = [1, 2, 3, 4, 5].findIndex(x => o <= x);
+    return k < 0 ? 6 : k + 1;
+  }
+
   function onCap6Field(i, field, val) {
     const s = (state.cap6Schede || [])[i]; if (!s) return;
-    s[field] = (field === 'peso') ? (parseFloat(val) || 0) : val;
+    if (field === 'peso' || field === 'sollevamenti_min' || field === 'ore_turno') {
+      s[field] = parseFloat(String(val).replace(',', '.')) || 0;
+    } else if (field === 'fm_freq_idx') {
+      s[field] = parseInt(val, 10) || 0;
+    } else {
+      s[field] = val;
+    }
+    // Cambiando le ore di turno la massa cumulativa raccomandata segue la tabella.
+    if (field === 'ore_turno') {
+      if (!s.sel) s.sel = {};
+      s.sel.MCUM = _cap6IdxMcum(s.ore_turno);
+      _renderCap6Native(_cap6FieldId());
+      return _cap6NativeSave();
+    }
     _cap6UpdateRes(i);
     _cap6NativeSave();
   }
+
+  function _cap6FieldId() {
+    const el = document.querySelector('.cap6-native');
+    return el ? el.id.replace('cap6-native-', '') : 'cap6_editor';
+  }
+
+  /* Il dato è assente nel file del tecnico? (→ campo evidenziato in giallo) */
+  function _c6Miss(s, k) {
+    const d = s && s.dati_tecnico;
+    if (!d) return '';
+    const v = d[k];
+    return (v === null || v === undefined || v === '') ? ' c6n-f--miss' : '';
+  }
+
+  /* SPECCHIETTO: cosa ha davvero inserito il tecnico esterno. «non inserito» =
+     il software ha messo un valore di partenza che va verificato. */
+  function _cap6DatiTecnicoHtml(s, kind) {
+    const d = s && s.dati_tecnico;
+    if (!d) return '';
+    const vuoto = v => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
+    const etaMap = { '20_45': '20 - 45 anni', 'sotto_20': 'sotto i 20 anni', 'sopra_45': 'oltre i 45 anni', 'oltre_45': 'oltre i 45 anni' };
+    const fmtEta = v => (Array.isArray(v) ? v : [v]).map(e => etaMap[e] || String(e).replace(/_/g, ' ')).join(', ');
+    const fmtSex = v => (Array.isArray(v) ? v : [v]).map(x => String(x).toUpperCase().startsWith('F') ? 'Femmine' : (String(x).toUpperCase() === 'MF' ? 'Maschi e femmine' : 'Maschi')).join(', ');
+    const righe = kind === 'T'
+      ? [['Peso', d.peso, v => v + ' kg'], ['Sollevamenti/min', d.frequenza, v => v],
+         ['Ore di turno', d.durata, v => v + ' h'], ['Distanza', d.distanza, v => v + ' m']]
+      : [['Sesso', d.sesso, fmtSex], ['Età', d.eta, fmtEta], ['Attività', d.descrizione, v => v],
+         ['Carico', d.carico, v => v], ['Peso', d.peso, v => v + ' kg'], ['Frequenza', d.frequenza, v => v + '/min'],
+         ['Ore di turno', d.durata, v => v + ' h'], ['Persone', d.num_persone, v => v]];
+    const presenti = righe.filter(r => !vuoto(r[1]));
+    const mancanti = righe.filter(r => vuoto(r[1])).map(r => r[0].toLowerCase());
+    const chips = presenti.length
+      ? presenti.map(([l, v, f]) => `<span class="c6n-dato"><i>${l}</i><b>${escHtml(String(f(v)))}</b></span>`).join('')
+      : '<span class="c6n-dati-nessuno">il tecnico non ha inserito nessun dato</span>';
+    const nota = mancanti.length
+      ? `<div class="c6n-dati-warn"><b>Non indicati:</b> ${escHtml(mancanti.join(', '))}. I campi in giallo partono da un valore predefinito: verificali.</div>` : '';
+    const fatt = kind === 'S'
+      ? `<div class="c6n-dati-warn" style="color:var(--gray-600,#5b6673)">Altezza mani, distanze, angolo, presa e arti non sono mai nel file: impostali qui sotto.</div>` : '';
+    return `<div class="c6n-dati"><div class="c6n-dati-h"><span class="c6n-dati-t">Dati del tecnico esterno</span>${chips}</div>${nota}${fatt}</div>`;
+  }
+
 
   function _cap6UpdateRes(i) {
     const s = (state.cap6Schede || [])[i]; if (!s) return;
@@ -7127,8 +7363,9 @@ const App = (() => {
          <p><b>Cosa succede in automatico.</b> In esportazione tutte le schede vengono disegnate in modo nativo nel Word, senza Excel.</p>`);
     }
     return _apprBanner('vuoto', 'Nessun dato',
-      'Il file di questo cliente non contiene dati di <b>movimenti ripetitivi</b> per questo capitolo.',
-      `<p>Il tecnico esterno non ha compilato la sezione sui movimenti ripetitivi degli arti superiori. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede OCRA. Se invece il rischio c'è, va richiesta al tecnico la valutazione.</p>`);
+      'Il file non contiene dati di <b>movimenti ripetitivi</b>: puoi comunque scegliere un <b>template</b> o aggiungere una <b>valutazione specifica</b>.',
+      `<p>Il tecnico esterno non ha compilato la sezione sui movimenti ripetitivi degli arti superiori. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede OCRA.</p>
+       <p><b>Se il rischio c'è puoi comunque procedere da qui:</b> scegli i <b>modelli (template)</b> per ogni gruppo omogeneo, oppure usa <b>«Aggiungi valutazione specifica»</b> in fondo per compilare tu una scheda OCRA.</p>`);
   }
 
   function buildCap7Editor(fieldId, data) {
@@ -7221,7 +7458,9 @@ const App = (() => {
   function _c6bRerender(fieldId) {
     const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
     if (!outer) return;
-    outer.innerHTML = buildCap6bEditor(fieldId, state.formValues[fieldId]);
+    outer.innerHTML = buildCap6bEditor(fieldId, state.formValues[fieldId])
+      + `<div id="cap6b-native-${fieldId}" class="cap6-native"><div class="cap14-note">Caricamento schede traino e spinta…</div></div>`;
+    setTimeout(() => _loadCap6bNative(fieldId), 0);
   }
 
   // Sesso/età dichiarati nel JSON per un gruppo (traino_spinta.gruppi_selezionati).
@@ -7240,7 +7479,45 @@ const App = (() => {
     };
   }
 
-  function _cap6bBanner() {
+  /* Approccio Traino e Spinta del JSON (speculare a _cap6b_modalita backend). */
+  function _cap6bModalita() {
+    const tr = (state.jsonRaw && state.jsonRaw.traino_spinta) || {};
+    const nomi = new Set();
+    (tr.valutazioni_gruppi || []).forEach(vg => { if (vg && vg.gruppo_nome) nomi.add(vg.gruppo_nome); });
+    const vals = new Set([...nomi].map(n => _cap6ModoGruppo(n, 'traino_spinta')).filter(Boolean));
+    const hasSchede = (tr.schede || []).some(sc => {
+      const m = (sc && sc.mansioni) || [];
+      return !(m.length && m.every(x => _cap6ModoGruppo(x, 'traino_spinta') === 'template'));
+    });
+    const hasTemplate = vals.has('template');
+    const hasAppro = vals.has('libera') || hasSchede;
+    if (hasTemplate && hasAppro) return 'misto';
+    if (hasTemplate) return 'template';
+    if (hasAppro) return 'approfondita';
+    if (Array.isArray(tr.gruppi_selezionati) && tr.gruppi_selezionati.length) return 'template';
+    return 'vuoto';
+  }
+
+  function _cap6bBanner(mod) {
+    if (mod === 'approfondita') {
+      return _apprBanner('libera', 'Valutazione libera',
+        'Il tecnico esterno ha descritto <b>a mano</b> le azioni di traino e spinta (altezza mani, distanza, frequenza): le schede qui sotto partono da quei dati.',
+        `<p><b>Cosa significa.</b> Per ogni attività il tecnico ha indicato altezza delle mani da terra, distanza percorsa e frequenza delle azioni. Il software ricava dalla tabella di Snook e Ciriello le forze raccomandate (iniziale e di mantenimento).</p>
+         <p><b>Cosa devi fare tu.</b> Le <b>forze misurate</b> (F.I. e F.M., in kg, col dinamometro) e gli <b>arti utilizzati</b> non sono nel file: inseriscili tu. Se la riga della tabella scelta in automatico non è adatta, puoi cambiarla (altezza, distanza, frequenza). Gli indici IRi e IRm si aggiornano dal vivo.</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione ogni scheda è disegnata in modo nativo nel Word, senza Excel.</p>`);
+    }
+    if (mod === 'misto') {
+      return _apprBanner('misto', 'Valutazione mista',
+        'Alcuni gruppi a <b>modelli di catalogo</b>, altri a <b>valutazione libera</b>. Scegli qui i modelli; sotto trovi le schede libere da completare.',
+        `<p><b>Cosa significa.</b> Il tecnico esterno ha usato approcci diversi a seconda del gruppo omogeneo: modelli standard per alcuni, descrizione a mano per altri.</p>
+         <p><b>Cosa devi fare tu.</b> Per i gruppi a modelli includi i modelli corrispondenti. Per i gruppi a valutazione libera completa le schede in fondo (forze misurate, arti utilizzati).</p>
+         <p><b>Cosa succede in automatico.</b> In esportazione le schede libere sono numerate per prime, poi i modelli; tutto è disegnato nel Word senza aprire Excel.</p>`);
+    }
+    if (mod === 'vuoto') {
+      return _apprBanner('vuoto', 'Nessun dato',
+        'Il file non contiene dati di <b>traino e spinta</b>: puoi comunque scegliere un modello o aggiungere una <b>valutazione specifica</b>.',
+        `<p>Il tecnico esterno non ha compilato la sezione. Se il rischio non è presente per questo cliente, il capitolo può restare senza schede. Altrimenti scegli i <b>modelli</b> per ogni gruppo oppure usa <b>«Aggiungi valutazione specifica»</b> in fondo.</p>`);
+    }
     return _apprBanner('template', 'Valutazione a modelli',
       'Scegli, per ogni gruppo, i <b>modelli di traino e spinta</b> corrispondenti alle attività. Scheda, caselle e misure sono già nel modello.',
       `<p><b>Cosa significa.</b> Ogni modello (es. «Carriola», «Carrelli e roll 5 min») contiene una scheda movimentazione carichi già valutata e un foglio di calcolo validato con le forze misurate e raccomandate (indici IRi e IRm).</p>
@@ -7260,7 +7537,11 @@ const App = (() => {
   }
 
   function buildCap6bEditor(fieldId, data) {
-    const banner = _cap6bBanner();
+    const mod = _cap6bModalita();
+    const banner = _cap6bBanner(mod);
+    if (mod === 'approfondita') {          // solo valutazione libera: niente catalogo
+      return `<div class="c6-editor" id="c6b-editor-${fieldId}">${banner}</div>`;
+    }
     const ed = state.formValues[fieldId] || { gruppi: [] };
     const gruppi = ed.gruppi || [];
     const cat = state.trasCatalog;
@@ -7318,6 +7599,255 @@ const App = (() => {
     saveChapterDraft();
   }
 
+  // ── Cap6B — valutazione LIBERA: schede Traino e Spinta native (Snook e Ciriello) ──
+  const C6B_ALT = [145, 95, 65];
+  const C6B_DIST = [2, 7.5, 15, 30, 45, 60];
+  const _c6bn = x => { const f = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isNaN(f) ? null : f; };
+  const _c6bIr = v => v == null ? '—' : v.toFixed(2).replace('.', ',');
+  const _c6bIt = v => v == null ? '—' : (Math.round(v * 100) / 100).toString().replace('.', ',');
+  function _c6bFreqLbl(sec) {
+    const L = (state.cap6bTab && state.cap6bTab.freq_label) || {};
+    if (L[String(sec)]) return L[String(sec)];
+    const v = _c6bn(sec); if (v == null) return '—';
+    return v < 60 ? `${_c6bIt(v)} s` : v < 3600 ? `${_c6bIt(v / 60)} min` : `${_c6bIt(v / 3600)} h`;
+  }
+  function _c6bFreqs(d) {
+    return ((state.cap6bTab && state.cap6bTab.colonne) || []).filter(c => c[0] === d).map(c => c[1]);
+  }
+  function _c6bBandH(h) {
+    h = _c6bn(h); if (h == null) return 95;
+    return C6B_ALT.reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a);
+  }
+  function _c6bBandD(d) {
+    d = _c6bn(d); if (d == null) return 7.5;
+    for (const b of C6B_DIST) if (d <= b) return b;
+    return C6B_DIST[C6B_DIST.length - 1];
+  }
+  function _c6bBandF(f, d) {
+    const ok = _c6bFreqs(d); f = _c6bn(f);
+    if (!ok.length) return null;
+    if (f == null || f <= 0) return ok[Math.floor(ok.length / 2)];
+    return ok.reduce((a, b) => Math.abs(Math.log(b) - Math.log(f)) < Math.abs(Math.log(a) - Math.log(f)) ? b : a);
+  }
+  function _c6bBande(s) {
+    const h = _c6bn(s.h_band) || _c6bBandH(s.altezza_mani_cm);
+    const d = _c6bn(s.d_band) || _c6bBandD(s.distanza_m);
+    const fb = _c6bn(s.f_band);
+    const f = (fb && _c6bFreqs(d).includes(fb)) ? fb : _c6bBandF(s.frequenza_sec, d);
+    return { h, d, f };
+  }
+  function _c6bRac(tipo, sx, b) {
+    const T = state.cap6bTab || {};
+    const col = (T.colonne || []).findIndex(c => c[0] === b.d && c[1] === b.f);
+    const t = (T.pesi || {})[`${tipo}_${sx}_${b.h}`];
+    return (t && col >= 0) ? [t[0][col], t[1][col]] : [null, null];
+  }
+  function _c6bTipi(m) {
+    m = String(m || '').toLowerCase();
+    const sp = m.includes('spint'), tr = m.includes('train');
+    return sp && !tr ? ['SPINTA'] : tr && !sp ? ['TRAINO'] : ['SPINTA', 'TRAINO'];
+  }
+  function _c6bSessi(x) {
+    x = String(x || '').trim().toUpperCase();
+    if (!x || ['E', 'MF', 'FM', 'ENTRAMBI', 'M F'].includes(x)) return ['M', 'F'];
+    return [x.startsWith('M') ? 'M' : 'F'];
+  }
+
+  async function _loadCap6bNative(fieldId) {
+    const box = document.getElementById(`cap6b-native-${fieldId}`);
+    if (!box) return;
+    const jp = state.currentClient?.json_path;
+    if (!jp) { box.innerHTML = ''; return; }
+    let r;
+    try { r = await call('get_cap6b_schede', jp); } catch (e) { r = null; }
+    if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
+    state.cap6bSchede = r.schede || [];
+    state.cap6bTab = r.tabella || {};
+    _renderCap6bNative(fieldId);
+  }
+
+  function _renderCap6bNative(fieldId) {
+    const box = document.getElementById(`cap6b-native-${fieldId}`);
+    if (!box) return;
+    const mod = _cap6bModalita();
+    const schede = state.cap6bSchede || [];
+    let head = '';
+    if (schede.length) {
+      head = `<div class="c6n-misure-note">Dati di partenza dal tecnico esterno (o inseriti dal back office). Inserisci le <b>forze misurate</b> e gli <b>arti utilizzati</b>: le forze raccomandate e gli indici si aggiornano dal vivo e <b>le modifiche si salvano da sole</b>.</div>`;
+    } else if (mod === 'template') {
+      head = `<div class="cap14-note">I modelli scelti vengono disegnati nel Word in fase di esportazione, con i valori del foglio del modello.</div>`;
+    }
+    box.innerHTML = head
+      + schede.map((s, i) => _cap6bSchedaHtml(s, i)).join('')
+      + _cap6bAddHtml(fieldId);
+    schede.forEach((s, i) => _cap6bUpdateRes(i));
+  }
+
+  let _c6bSaveT = null;
+  function _cap6bNativeSave() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_c6bSaveT);
+    _c6bSaveT = setTimeout(() =>
+      call('salva_cap6b_schede', jp, state.cap6bSchede || []).catch(() => {}), 500);
+  }
+  function _cap6bFieldId() {
+    const el = document.querySelector('[id^="cap6b-native-"]');
+    return el ? el.id.replace('cap6b-native-', '') : 'cap6b_editor';
+  }
+
+  function _cap6bAddHtml(fieldId) {
+    const opts = _availableGroupNames().map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
+    return `<div class="c7n-add">
+      <button type="button" class="btn btn-outline" onclick="App.cap6bToggleAdd('${fieldId}')">+ Aggiungi valutazione specifica</button>
+      <div class="c7n-add-form" id="c6bn-add-${fieldId}" hidden>
+        <div class="c6n-row2">
+          <label class="c6n-f"><span>Gruppo omogeneo</span>
+            <select id="c6ba-gr-${fieldId}">${opts || '<option value="">—</option>'}</select></label>
+          <label class="c6n-f"><span>Sesso operatori</span>
+            <select id="c6ba-sx-${fieldId}"><option value="E">Maschi e femmine</option><option value="M">Maschi</option><option value="F">Femmine</option></select></label>
+          <label class="c6n-f"><span>Azione</span>
+            <select id="c6ba-mo-${fieldId}"><option value="entrambi">Spinta e traino</option><option value="spinta">Solo spinta</option><option value="traino">Solo traino</option></select></label>
+        </div>
+        <label class="c6n-f c6n-wide"><span>Attività / descrizione (facoltativa)</span>
+          <input type="text" id="c6ba-de-${fieldId}" placeholder="Es. Spostamento carrelli portapezzi"></label>
+        <div class="c7n-add-act">
+          <button type="button" class="btn btn-primary" onclick="App.cap6bAggiungi('${fieldId}')">Aggiungi scheda</button>
+          <button type="button" class="btn btn-ghost" onclick="App.cap6bToggleAdd('${fieldId}')">Annulla</button>
+        </div>
+      </div></div>`;
+  }
+  function cap6bToggleAdd(fieldId) {
+    const f = document.getElementById(`c6bn-add-${fieldId}`);
+    if (f) f.hidden = !f.hidden;
+  }
+  async function cap6bAggiungi(fieldId) {
+    const jp = state.currentClient?.json_path;
+    const v = id => (document.getElementById(`${id}-${fieldId}`) || {}).value || '';
+    if (!jp) return;
+    const r = await call('aggiungi_cap6b_valutazione', jp, v('c6ba-gr'), v('c6ba-de'), v('c6ba-sx'), v('c6ba-mo')).catch(() => null);
+    if (r && r.ok) { toast('Scheda aggiunta: inserisci le forze misurate', 'success'); _loadCap6bNative(fieldId); }
+    else toast((r && r.error) || 'Errore', 'error');
+  }
+  async function cap6bRimuovi(fieldId, sid) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !confirm('Rimuovere questa valutazione aggiunta a mano?')) return;
+    const r = await call('rimuovi_cap6b_valutazione', jp, sid).catch(() => null);
+    if (r && r.ok) _loadCap6bNative(fieldId);
+  }
+
+  function _c6bNumIn(i, field, label, val, step) {
+    return `<label class="c6n-f"><span>${label}</span>
+      <input type="number" step="${step || 'any'}" value="${val == null ? '' : val}" oninput="App.onCap6bField(${i},'${field}',this.value)"></label>`;
+  }
+
+  function _cap6bBandsHtml(s, i) {
+    const b = _c6bBande(s);
+    const optH = `<option value="">Auto (${b.h} cm)</option>` + C6B_ALT.map(h => `<option value="${h}"${_c6bn(s.h_band) === h ? ' selected' : ''}>${h} cm</option>`).join('');
+    const optD = `<option value="">Auto (${_c6bIt(b.d)} m)</option>` + C6B_DIST.map(d => `<option value="${d}"${_c6bn(s.d_band) === d ? ' selected' : ''}>${_c6bIt(d)} m</option>`).join('');
+    const optF = `<option value="">Auto (${_c6bFreqLbl(b.f)})</option>` + _c6bFreqs(b.d).map(f => `<option value="${f}"${_c6bn(s.f_band) === f ? ' selected' : ''}>${_c6bFreqLbl(f)}</option>`).join('');
+    return `<label class="c6n-f"><span>Altezza mani</span><select onchange="App.onCap6bField(${i},'h_band',this.value)">${optH}</select></label>
+      <label class="c6n-f"><span>Distanza</span><select onchange="App.onCap6bField(${i},'d_band',this.value)">${optD}</select></label>
+      <label class="c6n-f"><span>Azione ogni</span><select onchange="App.onCap6bField(${i},'f_band',this.value)">${optF}</select></label>`;
+  }
+
+  function _cap6bSchedaHtml(s, i) {
+    const sel = (field, opts, cur) => `<select onchange="App.onCap6bField(${i},'${field}',this.value)">${opts.map(([v, l]) => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+    const sx = String(s.sesso || 'E').toUpperCase();
+    const sxCur = ['M', 'F'].includes(sx) ? sx : 'E';
+    const mo = String(s.modalita || 'entrambi').toLowerCase();
+    const moCur = mo.includes('spint') && !mo.includes('train') ? 'spinta' : mo.includes('train') && !mo.includes('spint') ? 'traino' : 'entrambi';
+    return `<section class="c6n-group" data-c6bi="${i}">
+      <header class="c6n-group-hdr">
+        <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
+        <span class="c6n-group-nome">${escHtml(s.gruppo_nome ? `Gruppo ${s.gruppo_label} — ${s.gruppo_nome}` : (s.gruppo_label ? `Gruppo ${s.gruppo_label}` : 'Gruppo omogeneo'))}</span>
+        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>
+          <button type="button" class="c6n-group-tpl" onclick="App.cap6bRimuovi('${escAttr(_cap6bFieldId())}','${escAttr(s.id)}')">Rimuovi</button>` : ''}
+      </header>
+      <div class="c6n-group-body">
+        <div class="c6n-grid">
+          <label class="c6n-f c6n-wide"><span>Attività / descrizione</span>
+            <input type="text" value="${escAttr(s.descrizione || '')}" oninput="App.onCap6bField(${i},'descrizione',this.value)"></label>
+          <label class="c6n-f"><span>Sesso operatori</span>${sel('sesso', [['E', 'Maschi e femmine'], ['M', 'Maschi'], ['F', 'Femmine']], sxCur)}</label>
+          <label class="c6n-f"><span>Azione</span>${sel('modalita', [['entrambi', 'Spinta e traino'], ['spinta', 'Solo spinta'], ['traino', 'Solo traino']], moCur)}</label>
+          ${_c6bNumIn(i, 'altezza_mani_cm', 'Altezza mani da terra (cm)', s.altezza_mani_cm)}
+          ${_c6bNumIn(i, 'distanza_m', 'Distanza (m)', s.distanza_m)}
+          ${_c6bNumIn(i, 'frequenza_sec', 'Azione ogni (secondi)', s.frequenza_sec)}
+        </div>
+        <div class="c6n-m"><b>Riga della tabella Snook e Ciriello</b> (scelta in automatico dai valori sopra, modificabile):</div>
+        <div class="c6n-grid" id="c6b-bands-${i}">${_cap6bBandsHtml(s, i)}</div>
+        <div class="c6b-blocks" id="c6b-blocks-${i}"></div>
+      </div>
+    </section>`;
+  }
+
+  /* Blocchi di calcolo (tipo × sesso): input forze misurate/arti + raccomandate e IR dal vivo. */
+  function _cap6bUpdateRes(i) {
+    const s = (state.cap6bSchede || [])[i];
+    const el = document.getElementById('c6b-blocks-' + i);
+    if (!s || !el) return;
+    const b = _c6bBande(s);
+    if (!s.misure || typeof s.misure !== 'object') s.misure = {};
+    const rows = [];
+    _c6bSessi(s.sesso).forEach(sx => _c6bTipi(s.modalita).forEach(tipo => {
+      const k = `${tipo}_${sx}`;
+      const m = s.misure[k] || {};
+      const [fiR, fmR] = _c6bRac(tipo, sx, b);
+      const fiM = _c6bn(m.fi), fmM = _c6bn(m.fm);
+      const iri = (fiM != null && fiR) ? fiM / fiR : null;
+      const irm = (fmM != null && fmR) ? fmM / fmR : null;
+      const col = v => v == null ? '#8a97a5' : (v > 1 ? '#C0392B' : '#1F7A3D');
+      const inp = (f, v, ph) => `<input type="number" step="any" placeholder="${ph}" value="${v == null ? '' : v}" oninput="App.onCap6bMis(${i},'${k}','${f}',this.value)">`;
+      rows.push(`<div class="c6b-blk">
+        <div class="c6b-blk-t">${tipo === 'SPINTA' ? 'Spinta' : 'Traino'} · ${sx === 'M' ? 'Maschi' : 'Femmine'} <span>Rif. scheda n. ${s.num}${sx}</span></div>
+        <div class="c6b-blk-g">
+          <label class="c6n-f"><span>F.I. misurata (kg)</span>${inp('fi', m.fi, 'kg')}</label>
+          <label class="c6n-f"><span>F.M. misurata (kg)</span>${inp('fm', m.fm, 'kg')}</label>
+          <label class="c6n-f"><span>Arti · F.I.</span>${inp('arti_fi', m.arti_fi == null ? 2 : m.arti_fi, '1-2')}</label>
+          <label class="c6n-f"><span>Arti · F.M.</span>${inp('arti_fm', m.arti_fm == null ? 2 : m.arti_fm, '1-2')}</label>
+          <div class="c6b-rac"><span>F.I. raccomandata</span><b>${_c6bIt(fiR)}</b></div>
+          <div class="c6b-rac"><span>F.M. raccomandata</span><b>${_c6bIt(fmR)}</b></div>
+          <div class="c6b-ir" style="background:${col(iri)}"><span>IRi</span><b>${_c6bIr(iri)}</b></div>
+          <div class="c6b-ir" style="background:${col(irm)}"><span>IRm</span><b>${_c6bIr(irm)}</b></div>
+        </div></div>`);
+    }));
+    // non ridisegna se l'utente sta scrivendo in un campo del blocco
+    const active = document.activeElement;
+    if (active && el.contains(active) && el.dataset.k === rows.length + '|' + b.h + b.d + b.f) {
+      // aggiorna solo i valori calcolati
+      const racs = el.querySelectorAll('.c6b-rac b'), irs = el.querySelectorAll('.c6b-ir');
+      const tmp = document.createElement('div'); tmp.innerHTML = rows.join('');
+      const nr = tmp.querySelectorAll('.c6b-rac b'), ni = tmp.querySelectorAll('.c6b-ir');
+      racs.forEach((x, n) => { if (nr[n]) x.textContent = nr[n].textContent; });
+      irs.forEach((x, n) => { if (ni[n]) { x.style.background = ni[n].style.background; x.querySelector('b').textContent = ni[n].querySelector('b').textContent; } });
+      return;
+    }
+    el.dataset.k = rows.length + '|' + b.h + b.d + b.f;
+    el.innerHTML = rows.join('');
+  }
+
+  function onCap6bField(i, field, val) {
+    const s = (state.cap6bSchede || [])[i];
+    if (!s) return;
+    const num = ['altezza_mani_cm', 'distanza_m', 'frequenza_sec', 'h_band', 'd_band', 'f_band'];
+    s[field] = num.includes(field) ? (val === '' ? null : _c6bn(val)) : val;
+    // la colonna frequenza scelta a mano può non esistere nella nuova distanza
+    if (s.f_band && !_c6bFreqs(_c6bBande(s).d).includes(_c6bn(s.f_band))) s.f_band = null;
+    const bands = document.getElementById('c6b-bands-' + i);
+    if (bands && field !== 'descrizione') bands.innerHTML = _cap6bBandsHtml(s, i);
+    _cap6bUpdateRes(i);
+    _cap6bNativeSave();
+  }
+  function onCap6bMis(i, k, f, val) {
+    const s = (state.cap6bSchede || [])[i];
+    if (!s) return;
+    if (!s.misure || typeof s.misure !== 'object') s.misure = {};
+    if (!s.misure[k]) s.misure[k] = {};
+    s.misure[k][f] = val === '' ? null : _c6bn(val);
+    _cap6bUpdateRes(i);
+    _cap6bNativeSave();
+  }
+
   // ── Cap7 — box nativo OCRA (valutazione libera: schede editabili) ─────────
   const C7_BANDS = [
     { max: 5.0, liv: 'RISCHIO ASSENTE', col: '#1E7A46' },
@@ -7349,6 +7879,7 @@ const App = (() => {
     if (!r || !r.ok) { box.innerHTML = `<div class="cap14-note">${escHtml(r?.error || 'Schede non disponibili')}</div>`; return; }
     state.cap7Schede = r.schede || [];
     state.cap7MisureCat = r.misure_catalogo || [];
+    state.cap7Tempi = r.tempi_catalogo || { campi: [], durata: [], recupero: [] };
     state.cap7Modalita = r.modalita || 'vuoto';
     _renderCap7Native(fieldId);
   }
@@ -7358,27 +7889,81 @@ const App = (() => {
     if (!box) return;
     const mod = state.cap7Modalita;
     const schede = state.cap7Schede || [];
-    if (mod === 'template') {
-      box.innerHTML = `<div class="cap14-note">Le schede scelte dal catalogo verranno disegnate in modo nativo nel Word (con i valori OCRA del modello) in fase di esportazione.</div>`;
-      return;
+    let head = '';
+    if (mod === 'template' && !schede.length) {
+      head = `<div class="cap14-note">Le schede scelte dal catalogo verranno disegnate in modo nativo nel Word (con i valori OCRA del modello) in fase di esportazione.</div>`;
+    } else if (schede.length) {
+      head = `<div class="c6n-misure-note">Valori OCRA di partenza derivati dai descrittori del tecnico (o inseriti dal back office). Correggili dove serve: l'indice e il livello di rischio si aggiornano dal vivo e <b>le modifiche si salvano da sole</b>.</div>`;
+    } else if (mod !== 'vuoto') {
+      head = `<div class="cap14-note">Nessuna scheda OCRA da compilare per questo cliente.</div>`;
     }
-    if (!schede.length) {
-      box.innerHTML = mod === 'vuoto' ? '' :
-        `<div class="cap14-note">Nessuna scheda OCRA da compilare per questo cliente.</div>`;
-      return;
-    }
-    box.innerHTML =
-      `<div class="c6n-misure-note">Valori OCRA di partenza derivati dai descrittori del tecnico. Correggili dove serve: l'indice e il livello di rischio si aggiornano dal vivo.</div>`
+    box.innerHTML = head
       + schede.map((s, i) => _cap7SchedaHtml(s, i)).join('')
-      + `<div class="c6n-misure-bar"><button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.saveCap7Schede('${fieldId}')">
+      + _cap7AddHtml(fieldId)
+      + (schede.length ? `<div class="c6n-misure-bar"><button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.saveCap7Schede('${fieldId}')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          Salva schede OCRA</button></div>`;
+          Salva schede OCRA</button></div>` : '');
     schede.forEach((s, i) => _cap7UpdateRes(i));
+  }
+
+  // ── Cap7: salvataggio automatico (come il Cap6) ──
+  let _cap7SaveT = null;
+  function _cap7NativeSave() {
+    const jp = state.currentClient?.json_path;
+    if (!jp) return;
+    clearTimeout(_cap7SaveT);
+    _cap7SaveT = setTimeout(() =>
+      call('salva_cap7_schede', jp, state.cap7Schede || []).catch(() => {}), 500);
+  }
+  function _cap7FieldId() {
+    const el = document.querySelector('[id^="cap7-native-"]');
+    return el ? el.id.replace('cap7-native-', '') : 'cap7_editor';
+  }
+
+  // ── Cap7: «Aggiungi valutazione specifica» (anche se il tecnico non ha compilato nulla) ──
+  function _cap7AddHtml(fieldId) {
+    const nomi = _availableGroupNames();
+    const opts = nomi.map(n => `<option value="${escAttr(n)}">${escHtml(n)}</option>`).join('');
+    return `<div class="c7n-add">
+      <button type="button" class="btn btn-outline" onclick="App.cap7ToggleAdd('${fieldId}')">+ Aggiungi valutazione specifica</button>
+      <div class="c7n-add-form" id="c7n-add-${fieldId}" hidden>
+        <div class="c6n-row2">
+          <label class="c6n-f"><span>Gruppo omogeneo</span>
+            <select id="c7a-gr-${fieldId}">${opts || '<option value="">—</option>'}</select></label>
+          <label class="c6n-f c6n-wide"><span>Fase / attività ripetitiva</span>
+            <input type="text" id="c7a-fa-${fieldId}" placeholder="Es. Confezionamento scatole"></label>
+        </div>
+        <label class="c6n-f c6n-wide"><span>Descrizione (facoltativa)</span>
+          <input type="text" id="c7a-de-${fieldId}"></label>
+        <div class="c7n-add-act">
+          <button type="button" class="btn btn-primary" onclick="App.cap7Aggiungi('${fieldId}')">Aggiungi scheda</button>
+          <button type="button" class="btn btn-ghost" onclick="App.cap7ToggleAdd('${fieldId}')">Annulla</button>
+        </div>
+      </div></div>`;
+  }
+  function cap7ToggleAdd(fieldId) {
+    const f = document.getElementById(`c7n-add-${fieldId}`);
+    if (f) f.hidden = !f.hidden;
+  }
+  async function cap7Aggiungi(fieldId) {
+    const jp = state.currentClient?.json_path;
+    const v = id => (document.getElementById(`${id}-${fieldId}`) || {}).value || '';
+    if (!jp) return;
+    if (!v('c7a-fa').trim()) { toast('Indica la fase / attività', 'error'); return; }
+    const r = await call('aggiungi_cap7_valutazione', jp, v('c7a-gr'), v('c7a-fa'), v('c7a-de')).catch(() => null);
+    if (r && r.ok) { toast('Scheda aggiunta: compila i valori OCRA', 'success'); _loadCap7Native(fieldId); }
+    else toast((r && r.error) || 'Errore', 'error');
+  }
+  async function cap7Rimuovi(fieldId, sid) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !confirm('Rimuovere questa valutazione aggiunta a mano?')) return;
+    const r = await call('rimuovi_cap7_valutazione', jp, sid).catch(() => null);
+    if (r && r.ok) _loadCap7Native(fieldId);
   }
 
   function _c7num(i, field, label, val) {
     return `<label class="c6n-f"><span>${label}</span>
-      <input type="number" step="0.1" value="${val == null ? '' : val}" oninput="App.onCap7Field(${i},'${field}',this.value)"></label>`;
+      <input type="number" step="0.1" id="c7f-${i}-${field}" value="${val == null ? '' : val}" oninput="App.onCap7Field(${i},'${field}',this.value)"></label>`;
   }
 
   function _cap7SchedaHtml(s, i) {
@@ -7389,9 +7974,12 @@ const App = (() => {
         <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
         <span class="c6n-group-nome">${escHtml(s.gruppo_nome ? `Gruppo ${s.gruppo_label} — ${s.gruppo_nome}` : (s.gruppo_label ? `Gruppo ${s.gruppo_label}` : 'Gruppo omogeneo'))}</span>
         <span class="c6n-group-badge">${escHtml(s.fase || '—')}</span>
+        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>
+          <button type="button" class="c6n-group-tpl" onclick="App.cap7Rimuovi('${escAttr(_cap7FieldId())}','${escAttr(s.id)}')">Rimuovi</button>` : ''}
       </header>
       <div class="c6n-group-body">
         ${q ? `<div class="c6n-m"><b>Valutazione tecnico:</b> ${escHtml(q)}</div>` : ''}
+        ${_c7TempiHtml(s, i)}
         <div class="c6n-grid">
           ${_c7num(i, 'freq_dx', 'Frequenza · arto dx', s.freq_dx)}
           ${_c7num(i, 'freq_sx', 'Frequenza · arto sx', s.freq_sx)}
@@ -7445,10 +8033,104 @@ const App = (() => {
     const cur = new Set(_c7MisureSel(s));
     if (on) cur.add(key); else cur.delete(key);
     s.misure_sel = [...cur];          // da ora la scelta è esplicita
+    _cap7NativeSave();
   }
   function onCap7Libero(i, val) {
     const s = (state.cap7Schede || [])[i];
     if (s) s.misure_libero = val;
+    _cap7NativeSave();
+  }
+
+  /* ── Durata del turno e tempi di ciclo (righe 5-19 del foglio Excel) ──
+     (e) = (a) − (b) − (c) − (d) ; (g) = e·60/f ; (i) = |g − h| / g.
+     La durata netta (e) SUGGERISCE il moltiplicatore durata e le «ore senza
+     adeguato recupero» il moltiplicatore recupero (restano modificabili). */
+  function _c7Blank(v) { return v === undefined || v === null || String(v).trim() === ''; }
+  function _c7MdDaE(e) {
+    const T = state.cap7Tempi || {};
+    const rows = T.durata || [];
+    for (const [, hi, m] of rows) if (e <= hi) return m;
+    return rows.length ? rows[rows.length - 1][2] : null;
+  }
+  function _c7TempiCalc(t) {
+    t = t || {};
+    const n = v => parseFloat(String(v).replace(',', '.')) || 0;
+    let e = null, g = null, i = null, md = null, mr = null;
+    if (!['eff_a', 'non_rip_d', 'durata_pause_b', 'mensa_c'].every(k => _c7Blank(t[k]))) {
+      e = n(t.eff_a) - n(t.non_rip_d) - n(t.mensa_c) - n(t.durata_pause_b);
+      md = e > 0 ? _c7MdDaE(e) : null;
+      if (!_c7Blank(t.pezzi_f) && n(t.pezzi_f) > 0) {
+        g = e * 60 / n(t.pezzi_f);
+        if (!_c7Blank(t.cadenza_h) && g > 0) i = Math.abs(g - n(t.cadenza_h)) / g;
+      }
+    }
+    if (!_c7Blank(t.ore_senza_recupero)) {
+      const rec = (state.cap7Tempi || {}).recupero || [];
+      const k = Math.max(0, Math.min(Math.round(n(t.ore_senza_recupero)), rec.length - 1));
+      mr = rec.length ? rec[k] : null;
+    }
+    return { e, g, i, md, mr };
+  }
+  // Risultati del blocco: tre numeri chiari + i moltiplicatori che ne derivano
+  function _c7TempiResHtml(t) {
+    const c = _c7TempiCalc(t);
+    const fmt = (v, d) => v === null ? '—' : (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toString().replace('.', ',');
+    const pill = (lbl, val, unit, tip) => `<span class="c7n-pill${val === '—' ? ' c7n-pill--vuota' : ''}" title="${escAttr(tip)}">
+        <i>${lbl}</i><b>${val}${val !== '—' && unit ? ' ' + unit : ''}</b></span>`;
+    return `${pill('Durata netta (e)', fmt(c.e, 1), 'min', '(e) = (a) − (b) − (c) − (d)')}
+      ${pill('Tempo di ciclo (g)', fmt(c.g, 1), 's', '(g) = (e / f) × 60')}
+      ${pill('Differenza (i)', c.i === null ? '—' : fmt(c.i * 100, 1), '%', '(i) = |(g) − (h)| / (g)')}
+      ${c.md !== null || c.mr !== null ? `<span class="c7n-appl">→ imposta ${c.md !== null ? `moltiplicatore durata <b>${fmt(c.md, 3)}</b>` : ''}${c.md !== null && c.mr !== null ? ' e ' : ''}${c.mr !== null ? `moltiplicatore recupero <b>${fmt(c.mr, 2)}</b>` : ''}</span>` : ''}`;
+  }
+
+  function _c7TempiHtml(s, i) {
+    const T = state.cap7Tempi || {};
+    const campi = T.campi || [];
+    if (!campi.length) return '';
+    const t = s.tempi || {};
+    const compilato = campi.some(c => !_c7Blank(t[c.key]));
+    const campo = cf => cf.scelta
+      ? `<label class="c7t-f" title="${escAttr(cf.info || '')}"><span>${escHtml(cf.label)}</span>
+          <select onchange="App.onCap7Tempo(${i},'${cf.key}',this.value)">${cf.scelta.map(o =>
+            `<option value="${escAttr(o)}"${(t[cf.key] || '') === o ? ' selected' : ''}>${escHtml(o || '—')}</option>`).join('')}</select></label>`
+      : `<label class="c7t-f" title="${escAttr(cf.info || '')}"><span>${escHtml(cf.label)}${cf.unit ? ` <em>${cf.unit}</em>` : ''}</span>
+          <input type="number" step="any" inputmode="decimal" value="${escAttr(t[cf.key] ?? '')}" oninput="App.onCap7Tempo(${i},'${cf.key}',this.value)"></label>`;
+    const gruppi = (T.gruppi || []).map(g => `<div class="c7t-g">
+        <div class="c7t-gt">${escHtml(g.titolo)}</div>
+        <div class="c7t-grid">${campi.filter(c => c.gruppo === g.key).map(campo).join('')}</div></div>`).join('');
+    return `<details class="c7n-tempi"${compilato ? ' open' : ''}>
+      <summary>Durata del turno e tempi di ciclo <span class="c7n-opz${compilato ? ' c7n-opz--on' : ''}">${compilato ? 'compilato' : 'facoltativo'}</span></summary>
+      <p class="c7t-hint">Compila solo se conosci questi dati: servono a calcolare i moltiplicatori di <b>durata</b> e di <b>recupero</b>. Se li lasci vuoti restano a 1. Passa il mouse su un campo per la spiegazione.</p>
+      ${gruppi}
+      <div class="c7n-tempi-res" id="c7t-res-${i}">${_c7TempiResHtml(t)}</div></details>`;
+  }
+
+  // Aggiorna SOLO ciò che cambia (niente ridisegno): il cursore resta nel campo e si
+  // può compilare uno dopo l'altro con Tab.
+  function onCap7Tempo(i, key, val) {
+    const s = (state.cap7Schede || [])[i];
+    if (!s) return;
+    if (!s.tempi) s.tempi = {};
+    s.tempi[key] = val;
+    const c = _c7TempiCalc(s.tempi);
+    // la durata netta imposta il moltiplicatore durata; le ore senza recupero quello di recupero
+    if (['eff_a', 'non_rip_d', 'durata_pause_b', 'mensa_c'].includes(key) && c.md !== null) {
+      s.molt_durata = c.md;
+      const el = document.getElementById(`c7f-${i}-molt_durata`); if (el) el.value = c.md;
+    }
+    if (key === 'ore_senza_recupero' && c.mr !== null) {
+      s.molt_recupero = c.mr;
+      const el = document.getElementById(`c7f-${i}-molt_recupero`); if (el) el.value = c.mr;
+    }
+    const res = document.getElementById(`c7t-res-${i}`); if (res) res.innerHTML = _c7TempiResHtml(s.tempi);
+    const tag = document.querySelector(`[data-c7i="${i}"] .c7n-opz`);
+    if (tag) {
+      const any = (state.cap7Tempi.campi || []).some(cf => !_c7Blank(s.tempi[cf.key]));
+      tag.textContent = any ? 'compilato' : 'facoltativo';
+      tag.classList.toggle('c7n-opz--on', any);
+    }
+    _cap7UpdateRes(i);
+    _cap7NativeSave();
   }
 
   function onCap7Field(i, field, val) {
@@ -7456,6 +8138,7 @@ const App = (() => {
     if (!s) return;
     s[field] = val;
     _cap7UpdateRes(i);
+    _cap7NativeSave();
   }
 
   function _cap7UpdateRes(i) {
@@ -9279,14 +9962,75 @@ const App = (() => {
 
   /* ── Toast ──────────────────────────────────────────────────────────── */
   /* ── Aggiornamenti via GitHub ───────────────────────────────────────── */
+  let _updRetry = 0, _updLast = 0;
+  function _updKey(info) { return `${info.app_version_remote || ''}|${info.app_build_remote || ''}`; }
+
   async function _checkUpdates() {
+    _updLast = Date.now();
     try {
       const info = await call('updater_check');
-      if (!info || !info.ok) return;                       // offline o errore → silenzio
+      if (!info || !info.ok) {                             // offline/errore: riprova (max 3 volte)
+        if (_updRetry < 3) { _updRetry++; setTimeout(_checkUpdates, 60000); }
+        return;
+      }
+      _updRetry = 0;
       if (!info.app_update) return;                        // già aggiornato
       state._updateInfo = info;
-      _renderUpdateBanner(info);
+      // Schermata a tutto schermo; se l'utente ha scelto «Più tardi» per QUESTA
+      // versione resta solo il promemoria in basso (riappare all'avvio successivo).
+      if (state._updSnooze === _updKey(info)) _renderUpdateBanner(info);
+      else _renderUpdateOverlay(info);
     } catch (e) { /* l'assenza di rete non deve disturbare l'avvio */ }
+  }
+
+  // Controlli periodici: ogni 30 minuti e quando la finestra torna in primo piano.
+  function _avviaControlloPeriodico() {
+    setInterval(_checkUpdates, 30 * 60 * 1000);
+    window.addEventListener('focus', () => {
+      if (Date.now() - _updLast > 10 * 60 * 1000) _checkUpdates();
+    });
+  }
+
+  // ── Avviso «nuova versione» A TUTTO SCHERMO ──
+  function _renderUpdateOverlay(info) {
+    const old = document.getElementById('update-overlay');
+    if (old) old.remove();
+    const rem = escHtml(info.app_version_remote || '');
+    const loc = escHtml(info.app_version_local || '');
+    const note = (info.note || []).map(n => `<li>${escHtml(n)}</li>`).join('');
+    const el = document.createElement('div');
+    el.id = 'update-overlay';
+    el.className = 'upd-ovl';
+    el.innerHTML = `<div class="upd-card" role="dialog" aria-modal="true">
+      <img class="upd-logo" src="Logo_stone.png" alt="">
+      ${info.prova ? '<div class="upd-prova">MODALITÀ PROVA — nessun aggiornamento reale</div>' : ''}
+      <div class="upd-pill">NUOVA VERSIONE DISPONIBILE</div>
+      <h2 class="upd-h">Presidia ${rem} è pronta</h2>
+      <p class="upd-sub">Stai usando la versione <b>${loc}</b>${info.app_data_local ? ` (compilata il ${escHtml(info.app_data_local)})` : ''}.
+        Aggiorna per avere le ultime novità e correzioni.</p>
+      ${note ? `<div class="upd-box"><div class="upd-box-t">Novità</div><ul class="upd-list">${note}</ul></div>` : ''}
+      <div class="upd-box upd-steps"><div class="upd-box-t">Come aggiornare</div>
+        <ol><li>Apri <b>GitHub Desktop</b></li><li>Premi <b>Fetch origin</b>, poi <b>Pull origin</b></li>
+        <li><b>Chiudi e riapri</b> Presidia</li></ol></div>
+      <div class="upd-act">
+        <button class="btn btn-primary upd-go" onclick="App.updaterOpenGithub()">Apri GitHub</button>
+        ${info.obbligatorio ? '' : '<button class="btn btn-ghost upd-later" onclick="App.updaterLater()">Più tardi</button>'}
+      </div>
+      ${info.obbligatorio ? '<p class="upd-oblig">Questo aggiornamento è obbligatorio.</p>' : ''}
+    </div>`;
+    document.body.appendChild(el);
+    const bar = document.getElementById('update-banner'); if (bar) bar.remove();
+  }
+
+  function updaterLater() {
+    const info = state._updateInfo;
+    if (info) { state._updSnooze = _updKey(info); }
+    const el = document.getElementById('update-overlay'); if (el) el.remove();
+    if (info) _renderUpdateBanner(info);                   // promemoria discreto
+  }
+
+  function updaterShow() {
+    if (state._updateInfo) _renderUpdateOverlay(state._updateInfo);
   }
 
   // Controllo MANUALE (clic sul badge versione): dà SEMPRE un riscontro visibile,
@@ -9302,8 +10046,7 @@ const App = (() => {
     }
     if (info.app_update) {
       state._updateInfo = info;
-      _renderUpdateBanner(info);
-      toast(`È disponibile la versione ${info.app_version_remote || ''}.`, 'success', 5000);
+      _renderUpdateOverlay(info);
     } else {
       toast(`Sei già alla versione più recente (${info.app_version_local || ''}).`, 'info', 4000);
     }
@@ -9322,7 +10065,7 @@ const App = (() => {
     bar.innerHTML =
       `<span class="ub-ico">${ic('download', 16)}</span>` +
       `<span class="ub-txt">È disponibile una nuova versione${ver ? ` (${ver})` : ''} · scaricala da GitHub</span>` +
-      `<span class="ub-actions"><button class="ub-btn ub-primary" onclick="App.updaterOpenGithub()">Apri GitHub</button></span>` +
+      `<span class="ub-actions"><button class="ub-btn ub-primary" onclick="App.updaterShow()">Dettagli</button></span>` +
       `<button class="ub-close" title="Chiudi" onclick="App.updaterDismiss()">${ic('x', 14)}</button>`;
     document.body.appendChild(bar);
   }
@@ -9716,7 +10459,9 @@ const App = (() => {
     onCap14ProdName, onCap14ProdRemove, onCap14ProdAdd,
     onCap14ProdSchedaSearch, onCap14ProdSchedaPick, onCap14ProdUseSuggested,
     // Cap7 editor
-    onC7SchedaToggle, onC6bModelloToggle, onCap7Field, onCap7Misura, onCap7Libero, saveCap7Schede,
+    onC7SchedaToggle, onC6bModelloToggle, onCap6bField, onCap6bMis, cap6bToggleAdd, cap6bAggiungi, cap6bRimuovi, onCap7Field, onCap7Misura, onCap7Libero, saveCap7Schede,
+    cap6UsaTemplate, c6TopToggle, c6CalcToggle, onCap7Tempo, cap7ToggleAdd, cap7Aggiungi, cap7Rimuovi,
+    cap6ToggleAdd, cap6Aggiungi, cap6Rimuovi,
     // Cap17 editor
     onC17Settore,
     // Cap21 editor
@@ -9732,7 +10477,7 @@ const App = (() => {
     showReleaseNotes,
     toast, showLoading, hideLoading,
     // Aggiornamenti GitHub
-    updaterDismiss, updaterApplySupporto, updaterDownloadApp, updaterOpenGithub,
+    updaterDismiss, updaterApplySupporto, updaterDownloadApp, updaterOpenGithub, updaterLater, updaterShow,
     controllaAggiornamenti,
   };
 })();

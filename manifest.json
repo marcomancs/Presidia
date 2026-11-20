@@ -1,4 +1,10 @@
 {
-  "app_version": "1.6",
+  "app_version": "1.7",
+  "app_build": "20261119155219",
+  "note": [
+    "Cap. 6B Traino e spinta: valutazione libera (forze misurate, arti utilizzati, indici IRi/IRm dal vivo) e tabelle ridisegnate",
+    "Cap. 2: nuovo modello con tabella del gruppo omogeneo semplificata (DPI per fase scelti dal tecnico, attrezzature dal file)",
+    "Cap. 7: corrette le durate nette dei fogli di calcolo dei modelli (indici invariati)"
+  ],
   "supporto_files": {}
 }
