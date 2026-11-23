@@ -38,6 +38,9 @@
     background: linear-gradient(90deg, rgba(16,61,94,0), #103D5E 50%, rgba(16,61,94,0));
     animation: slide 1.35s cubic-bezier(.65,0,.35,1) infinite;
   }
+  /* Windows: la finestra È la card (424x264, angoli stondati dalla regione Win32) */
+  body.win { background:#eef2f6; }
+  body.win .card { inset:0; border-radius:0; box-shadow: inset 0 0 0 1px rgba(16,61,94,.14); }
   @keyframes fadein { from{opacity:0} to{opacity:1} }
   @keyframes rise {
     from{ opacity:0; transform: translateY(10px) scale(.985); }
@@ -51,5 +54,6 @@
     <img id="logo" src="Logo_stone.png" alt="Stone Safety">
     <div class="bar"></div>
   </div>
+<script>if (/Windows/i.test(navigator.userAgent)) document.body.classList.add('win');</script>
 </body>
 </html>

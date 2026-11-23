@@ -1,10 +1,14 @@
 {
-  "app_version": "1.7",
-  "app_build": "20261119155219",
+  "app_version": "1.8",
+  "app_build": "20261123160010",
   "note": [
     "Cap. 6B Traino e spinta: valutazione libera (forze misurate, arti utilizzati, indici IRi/IRm dal vivo) e tabelle ridisegnate",
     "Cap. 2: nuovo modello con tabella del gruppo omogeneo semplificata (DPI per fase scelti dal tecnico, attrezzature dal file)",
-    "Cap. 7: corrette le durate nette dei fogli di calcolo dei modelli (indici invariati)"
+    "Cap. 7: corrette le durate nette dei fogli di calcolo dei modelli (indici invariati)",
+    "Cap. 7: scheda di calcolo ricreata come il foglio Excel (tabelle dei fattori con valore evidenziato) e blocco tempi con valori di default",
+    "Cap. 10 Rumore: rifatto, calcoli integrati per gruppo omogeneo (LEX,8h, incertezza, verifica DPI, rischio) e nuova maschera",
+    "Nuovo menu cliente a categorie con espansione al passaggio del mouse; Cap. 6/7/6B: aggiungi/elimina schede; Allegati e Piano di intervento rifiniti",
+    "Nuova sezione RAS (Relazione Annuale Sicurezza condomini): carichi il pacchetto .zip della checklist (JSON + foto) e genera Relazione sicurezza, Registro interventi e Checklist fornitori"
   ],
   "supporto_files": {}
 }

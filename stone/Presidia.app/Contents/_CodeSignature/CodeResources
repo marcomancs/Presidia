@@ -22,7 +22,7 @@
 		</data>
 		<key>Resources/base_library.zip</key>
 		<data>
-		zYHcyYRhar+tuSfy3fwbUvw0rzo=
+		wtsO3qzRSyhGpJX+R19dAUJglMA=
 		</data>
 		<key>Resources/certifi/cacert.pem</key>
 		<data>
@@ -178,15 +178,15 @@
 		</data>
 		<key>Resources/web/app.js</key>
 		<data>
-		V4U/YW890II0aJF11z71WehKfv0=
+		K5x705pc8dlOSMntpHicO/WKMJ0=
 		</data>
 		<key>Resources/web/index.html</key>
 		<data>
-		BIjRB1IMUwT4dSr5LZ4D8hDMnJE=
+		Ecku+XhVgMOFgIRHUwAtFzyVapw=
 		</data>
 		<key>Resources/web/splash.html</key>
 		<data>
-		VtQxyCq0lcxjRLHiO5M94yt7y+M=
+		jlPD4YHRtB49ZpbUUZ8UN2mdQOQ=
 		</data>
 		<key>Resources/web/stone_icon.png</key>
 		<data>
@@ -194,7 +194,7 @@
 		</data>
 		<key>Resources/web/style.css</key>
 		<data>
-		06pA4wJ/VrHKgIdtyET2bz0S7Oo=
+		1wLCQY3yl0PFh8+IOpg3qq05NR4=
 		</data>
 		<key>Resources/webview/js/api.js</key>
 		<data>
@@ -1306,7 +1306,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			wk+JG9ekKeLw75V1C9+PMx+MHZfCJUCJLuPs19atLmo=
+			fK0IFsAp51sBx701H3ZUY0P96FTP+gZefvyWXN+Cp4Q=
 			</data>
 		</dict>
 		<key>Resources/certifi/cacert.pem</key>
@@ -1714,21 +1714,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			9gWOx3N03UszkrVFkuGOBm6MlMkjdWhY0mq00eJquEY=
+			Jucqv4QZeHH39D/UuPUnRiDJ/MsrOfceFitlrlAo8zQ=
 			</data>
 		</dict>
 		<key>Resources/web/index.html</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			8V4ASfGyC+zGg+q8y6VFNOGcwweZExAVTe8tP8iqdio=
+			49qiVYRei3IVShbj1urZfCeW0LMXqanc833z3R3CoZY=
 			</data>
 		</dict>
 		<key>Resources/web/splash.html</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			laIvIGKvIHz/iQqCJIBFAhnR7OD6CsILVIrwnibPgdM=
+			In6tlKjnprmtca1/5UqMxDDTgcYGltU6gwn+gRO6Izo=
 			</data>
 		</dict>
 		<key>Resources/web/stone_icon.png</key>
@@ -1742,7 +1742,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			c9d5yFqLhlMY0304jHJakPqpT/JEg+CP5Ip8UdG8Cmk=
+			sy3Vuls+4fOWF19tMksehR4fsJTxjV284kE09qzuFrQ=
 			</data>
 		</dict>
 		<key>Resources/webview/js/api.js</key>

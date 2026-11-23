@@ -1,0 +1,14 @@
+{
+  "id": "1.8-202611231600",
+  "versione": "1.8",
+  "titolo": "Principali novità rispetto alla versione precedente",
+  "data": "2026-11-23",
+  "voci": [
+    "Nuova sezione RAS (Relazione Annuale Sicurezza condomini): importazione del JSON della checklist e generazione di Relazione sulla sicurezza, Registro interventi e Checklist dei fornitori.",
+    "Download dei JSON dei tecnici direttamente dal software: elenco clienti con ricerca, filtri per data di caricamento e selezione della sede.",
+    "Capitolo 11 Vibrazioni rivisto: calcolo integrato dell'esposizione A(8) per mano-braccio e corpo intero, scelta dell'accelerometro n. 9 o n. 11 e schede per gruppo omogeneo.",
+    "Capitolo 10 Rumore rivisto: calcoli integrati per gruppo omogeneo e nuova maschera di compilazione.",
+    "Capitoli 6, 6B e 7: gestione delle schede per movimentazione, con possibilità di aggiungere ed eliminare le schede.",
+    "Allegati e Piano di intervento perfezionati."
+  ]
+}

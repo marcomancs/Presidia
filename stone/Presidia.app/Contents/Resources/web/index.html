@@ -46,6 +46,7 @@
     <button class="rail-item" onclick="App.showConfig()" title="Impostazioni">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
+    <div class="rail-ver" title="Clicca per controllare gli aggiornamenti" onclick="App.controllaAggiornamenti()">V 1.8</div>
   </nav>
 
   <div id="app-body">
@@ -157,8 +158,8 @@
               <polyline points="12 5 19 12 12 19"/>
             </svg>
           </button>
-          <button id="btn-tech-drive" onclick="App.openTechDrive()"
-                  title="Apre nel browser la cartella Drive dove i tecnici caricano i JSON">
+          <button id="btn-tech-drive" onclick="App.apriDrive()"
+                  title="Cerca e scarica i JSON caricati dai tecnici su Drive">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round">
@@ -194,6 +195,11 @@
         </div>
         <div class="cd-hero-right">
           <div class="cd-hero-actions">
+            <button class="cd-hbtn cd-hbtn--download" onclick="App.compileAllToFolder('docx')"
+                    title="Scarica tutto: capitoli, Allegati, Piano di intervento e Lettera di consegna">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+              Scarica tutto il DVR
+            </button>
             <button class="cd-hbtn cd-hbtn--solid" onclick="App.openChecklist()">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="m17 12 2 2 4-4"/></svg>
               Checklist
@@ -228,8 +234,8 @@
             <span class="cx-tab-div"></span>
             <button class="cx-tab cx-tab--locked" data-sec="haccp"
                     onclick="App.setClientSection('haccp')">HACCP</button>
-            <button class="cx-tab cx-tab--locked" data-sec="ras"
-                    onclick="App.setClientSection('ras')">RAS</button>
+            <button class="cx-tab" data-sec="ras"
+                    onclick="App.apriRas()">RAS</button>
             <button class="cx-tab cx-tab--locked" data-sec="cantieri"
                     onclick="App.setClientSection('cantieri')">Cantieri</button>
             <button class="cx-tab cx-tab--locked" data-sec="commerciale"
@@ -243,152 +249,106 @@
               <div class="cxmenu-intro-sb">Scegli il modulo su cui lavorare per questo cliente.</div>
             </div>
 
-            <!-- ── Sezione DVR (attivo) ─────────────────────────────── -->
-            <div class="cxmenu-group">
-              <div class="cxmenu-group-h">
-                <span class="cxmenu-group-ic">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-                </span>
-                <span class="cxmenu-group-tt">DVR</span>
-                <span class="cxmenu-group-sb">Documento di Valutazione dei Rischi</span>
-                <span class="cxmenu-group-chip cxmenu-group-chip--on">Attivo</span>
-                <span class="cxmenu-group-ln"></span>
+            <!-- Menu a categorie: si espande al passaggio del mouse, una sola click per scegliere -->
+            <div class="cxacc">
+              <div class="cxacc-item" tabindex="0" data-mod="dvr">
+                <div class="cxacc-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span class="cxmenu-group-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
+                  <span class="cxacc-txt"><span class="cxacc-tt">DVR</span><span class="cxacc-sb">Documento di Valutazione dei Rischi</span></span>
+                                    <svg class="cxacc-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+                <div class="cxacc-body"><div class="cxacc-body-in">
+                  <button class="cxacc-fn" onclick="App.setClientSection('capitoli')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">Capitoli</span><span class="cxacc-fn-sb">Compila i capitoli del DVR</span></span>
+                    
+                  </button>
+                  <button class="cxacc-fn" onclick="App.setClientSection('allegati')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">Allegati</span><span class="cxacc-fn-sb">Genera gli allegati numerati</span></span>
+                    
+                  </button>
+                  <button class="cxacc-fn" onclick="App.setClientSection('piano')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">Piano di intervento</span><span class="cxacc-fn-sb">Copia PDF e compila le checklist</span></span>
+                    
+                  </button>
+                  <button class="cxacc-fn" onclick="App.setClientSection('lettera')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">Lettera di consegna</span><span class="cxacc-fn-sb">Prescrizioni dal sopralluogo</span></span>
+                    
+                  </button>
+                </div></div>
               </div>
-              <div class="cxmenu-grid">
-                <button class="cxmenu-card" onclick="App.setClientSection('capitoli')">
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">Capitoli</span>
-                  <span class="cxmenu-sb">Compila i capitoli del DVR</span>
-                </button>
-                <button class="cxmenu-card" onclick="App.setClientSection('allegati')">
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">Allegati</span>
-                  <span class="cxmenu-sb">Genera gli allegati numerati</span>
-                </button>
-                <button class="cxmenu-card" onclick="App.setClientSection('piano')">
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">Piano di intervento</span>
-                  <span class="cxmenu-sb">Copia PDF e compila le checklist</span>
-                </button>
-                <button class="cxmenu-card" onclick="App.setClientSection('lettera')">
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">Lettera di consegna</span>
-                  <span class="cxmenu-sb">Prescrizioni dal sopralluogo</span>
-                </button>
+              <div class="cxacc-item cxacc-item--dev" tabindex="0" data-mod="haccp">
+                <div class="cxacc-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span class="cxmenu-group-ic cxmenu-group-ic--soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></span>
+                  <span class="cxacc-txt"><span class="cxacc-tt">HACCP</span><span class="cxacc-sb">Igiene e sicurezza alimentare</span></span>
+                  <span class="cxmenu-group-chip cxmenu-group-chip--lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>In sviluppo</span>
+                  <svg class="cxacc-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+                <div class="cxacc-body"><div class="cxacc-body-in">
+                  <button class="cxacc-fn cxacc-fn--locked" onclick="App.setClientSection('haccp')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">HACCP</span><span class="cxacc-fn-sb">Igiene e sicurezza alimentare</span></span>
+                    <span class="cxacc-fn-soon">In sviluppo</span>
+                  </button>
+                </div></div>
               </div>
-            </div>
-
-            <!-- ── Sezione HACCP (in sviluppo) ──────────────────────── -->
-            <div class="cxmenu-group">
-              <div class="cxmenu-group-h">
-                <span class="cxmenu-group-ic cxmenu-group-ic--soon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
-                </span>
-                <span class="cxmenu-group-tt">HACCP</span>
-                <span class="cxmenu-group-sb">Igiene e sicurezza alimentare</span>
-                <span class="cxmenu-group-chip">In sviluppo</span>
-                <span class="cxmenu-group-ln"></span>
+              <div class="cxacc-item cxacc-item--off" tabindex="0" data-mod="ras">
+                <div class="cxacc-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span class="cxmenu-group-ic cxmenu-group-ic--soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+                  <span class="cxacc-txt"><span class="cxacc-tt">RAS</span><span class="cxacc-sb">Relazione Annuale Sicurezza</span></span>
+                  <span class="cxmenu-group-chip" id="mod-ras-chip">Nessun JSON RAS</span>
+                  <svg class="cxacc-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+                <div class="cxacc-body"><div class="cxacc-body-in">
+                  <button class="cxacc-fn" onclick="App.apriRasCliente()">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">RAS</span><span class="cxacc-fn-sb">Relazione Annuale Sicurezza</span></span>
+                    
+                  </button>
+                </div></div>
               </div>
-              <div class="cxmenu-grid cxmenu-grid--compact">
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('haccp')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">HACCP</span>
-                  <span class="cxmenu-sb">Igiene e sicurezza alimentare</span>
-                </button>
+              <div class="cxacc-item cxacc-item--dev" tabindex="0" data-mod="cantieri">
+                <div class="cxacc-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span class="cxmenu-group-ic cxmenu-group-ic--soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="m5 20 5.5-14h3L19 20"/><path d="M8.5 12h7"/></svg></span>
+                  <span class="cxacc-txt"><span class="cxacc-tt">Cantieri</span><span class="cxacc-sb">Sicurezza nei cantieri temporanei e mobili</span></span>
+                  <span class="cxmenu-group-chip cxmenu-group-chip--lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>In sviluppo</span>
+                  <svg class="cxacc-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+                <div class="cxacc-body"><div class="cxacc-body-in">
+                  <button class="cxacc-fn cxacc-fn--locked" onclick="App.setClientSection('cantieri')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h3"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">POS</span><span class="cxacc-fn-sb">Piano Operativo di Sicurezza</span></span>
+                    <span class="cxacc-fn-soon">In sviluppo</span>
+                  </button>
+                  <button class="cxacc-fn cxacc-fn--locked" onclick="App.setClientSection('cantieri')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">PSC</span><span class="cxacc-fn-sb">Piano di Sicurezza e Coordinamento</span></span>
+                    <span class="cxacc-fn-soon">In sviluppo</span>
+                  </button>
+                  <button class="cxacc-fn cxacc-fn--locked" onclick="App.setClientSection('cantieri')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">PIMUS</span><span class="cxacc-fn-sb">Montaggio, uso e smontaggio ponteggi</span></span>
+                    <span class="cxacc-fn-soon">In sviluppo</span>
+                  </button>
+                </div></div>
               </div>
-            </div>
-
-            <!-- ── Sezione RAS (in sviluppo) ────────────────────────── -->
-            <div class="cxmenu-group">
-              <div class="cxmenu-group-h">
-                <span class="cxmenu-group-ic cxmenu-group-ic--soon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-                </span>
-                <span class="cxmenu-group-tt">RAS</span>
-                <span class="cxmenu-group-sb">Relazione Annuale Sicurezza</span>
-                <span class="cxmenu-group-chip">In sviluppo</span>
-                <span class="cxmenu-group-ln"></span>
-              </div>
-              <div class="cxmenu-grid cxmenu-grid--compact">
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('ras')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">RAS</span>
-                  <span class="cxmenu-sb">Relazione Annuale Sicurezza</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- ── Sezione CANTIERI (in sviluppo) ───────────────────── -->
-            <div class="cxmenu-group">
-              <div class="cxmenu-group-h">
-                <span class="cxmenu-group-ic cxmenu-group-ic--soon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="m5 20 5.5-14h3L19 20"/><path d="M8.5 12h7"/></svg>
-                </span>
-                <span class="cxmenu-group-tt">Cantieri</span>
-                <span class="cxmenu-group-sb">Sicurezza nei cantieri temporanei e mobili</span>
-                <span class="cxmenu-group-chip">In sviluppo</span>
-                <span class="cxmenu-group-ln"></span>
-              </div>
-              <div class="cxmenu-grid">
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('cantieri')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h3"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">POS</span>
-                  <span class="cxmenu-sb">Piano Operativo di Sicurezza</span>
-                </button>
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('cantieri')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">PSC</span>
-                  <span class="cxmenu-sb">Piano di Sicurezza e Coordinamento</span>
-                </button>
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('cantieri')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">PIMUS</span>
-                  <span class="cxmenu-sb">Montaggio, uso e smontaggio ponteggi</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- ── Sezione COMMERCIALE (in sviluppo) ────────────────── -->
-            <div class="cxmenu-group">
-              <div class="cxmenu-group-h">
-                <span class="cxmenu-group-ic cxmenu-group-ic--soon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                </span>
-                <span class="cxmenu-group-tt">Commerciale</span>
-                <span class="cxmenu-group-chip">In sviluppo</span>
-                <span class="cxmenu-group-ln"></span>
-              </div>
-              <div class="cxmenu-grid cxmenu-grid--compact">
-                <button class="cxmenu-card cxmenu-card--locked" onclick="App.setClientSection('commerciale')">
-                  <span class="cxmenu-soon">In sviluppo</span>
-                  <span class="cxmenu-ic">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  </span>
-                  <span class="cxmenu-tt">Commerciale</span>
-                </button>
+              <div class="cxacc-item cxacc-item--dev" tabindex="0" data-mod="commerciale">
+                <div class="cxacc-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span class="cxmenu-group-ic cxmenu-group-ic--soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+                  <span class="cxacc-txt"><span class="cxacc-tt">Commerciale</span><span class="cxacc-sb"></span></span>
+                  <span class="cxmenu-group-chip cxmenu-group-chip--lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>In sviluppo</span>
+                  <svg class="cxacc-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
+                <div class="cxacc-body"><div class="cxacc-body-in">
+                  <button class="cxacc-fn cxacc-fn--locked" onclick="App.setClientSection('commerciale')">
+                    <span class="cxacc-fn-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+                    <span class="cxacc-fn-tx"><span class="cxacc-fn-tt">Commerciale</span><span class="cxacc-fn-sb"></span></span>
+                    <span class="cxacc-fn-soon">In sviluppo</span>
+                  </button>
+                </div></div>
               </div>
             </div>
           </div>
@@ -532,6 +492,28 @@
     </div>
 
     <!-- ── CHAPTER FORM ──────────────────────────────────────────── -->
+    <!-- ── RAS (Relazione Annuale Sicurezza condomini) ───────────── -->
+    <div id="view-ras" class="view">
+      <button class="btn-back-link" onclick="App.showHome()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Home
+      </button>
+      <div class="alg-head">
+        <div>
+          <div class="alg-title">RAS — Relazione Annuale Sicurezza</div>
+          <div class="alg-sub">Carica il JSON esportato dalla checklist RAS: il software compila Relazione sicurezza, Registro interventi e Checklist dei fornitori. Le foto non si importano: nel Word trovi i segnaposto da sostituire a mano.</div>
+        </div>
+        <div class="alg-head-actions">
+          <button class="alg-btn alg-btn--solid" onclick="App.rasScegli()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Carica JSON RAS
+          </button>
+        </div>
+      </div>
+      <div id="ras-body"></div>
+    </div>
+
     <div id="view-form" class="view">
 
       <!-- Form top navigation bar -->
@@ -651,8 +633,6 @@
   </main>
   </div><!-- /app-body -->
 
-  <div id="version-badge" title="Clicca per controllare gli aggiornamenti"
-       onclick="App.controllaAggiornamenti()" style="cursor:pointer">Presidia · V 1.7</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -697,5 +677,32 @@
 <div id="toast-container"></div>
 
 <script src="app.js"></script>
+
+<!-- ── Maschera «JSON dei tecnici» (Drive), in sovrimpressione ───────────── -->
+<div id="drv-ov" class="drv-ov" aria-hidden="true" onmousedown="if(event.target===this)App.driveChiudi()">
+  <div class="drv-card" role="dialog" aria-modal="true" aria-label="JSON dei tecnici">
+    <div class="drv-top">
+      <div class="drv-top-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div class="drv-top-tx"><div class="drv-top-t">JSON dei tecnici</div><div class="drv-top-s" id="drv-sub">Scegli il cliente e scarica il JSON caricato dal tecnico</div></div>
+      <button class="drv-btn" onclick="App.driveApriBrowser()" title="Apre la cartella Drive nel browser">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Apri Drive nel browser</button>
+      <button class="drv-x" onclick="App.driveChiudi()" aria-label="Chiudi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="drive-body" class="drv-body"></div>
+  </div>
+</div>
+
+<!-- ── Novità della versione (una sola volta, alla prima apertura) ───────── -->
+<div id="chl-ov" class="drv-ov" aria-hidden="true">
+  <div class="drv-card chl-card" role="dialog" aria-modal="true" aria-label="Novità della versione">
+    <div class="drv-top">
+      <div class="drv-top-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg></div>
+      <div class="drv-top-tx"><div class="drv-top-t" id="chl-t">Novità della versione</div><div class="drv-top-s" id="chl-s">Cosa è cambiato dall'ultima versione</div></div>
+    </div>
+    <div class="drv-body"><ul class="chl-list" id="chl-list"></ul>
+      <div style="text-align:right;margin-top:18px"><button class="drv-btn drv-btn--solid" onclick="App.chiudiChangelog()">Ho capito</button></div></div>
+  </div>
+</div>
 </body>
 </html>

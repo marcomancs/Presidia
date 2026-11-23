@@ -251,6 +251,25 @@ const App = (() => {
     // non scarica nulla, mostra un avviso con il link al repo. Ritardato per
     // non rallentare l'avvio; eventuali errori di rete sono silenziosi.
     setTimeout(() => { _checkUpdates(); _avviaControlloPeriodico(); }, delay + 1500);
+    setTimeout(() => { _mostraChangelog(); }, delay + 900);
+  }
+
+  // Novità della versione: compaiono UNA sola volta, alla prima apertura dopo l'aggiornamento.
+  let _chlId = '';
+  async function _mostraChangelog() {
+    let r = null;
+    try { r = await call('changelog_da_mostrare'); } catch (e) {}
+    if (!r || !r.show) return;
+    _chlId = r.id;
+    const t = document.getElementById('chl-t'); if (t) t.textContent = 'Novità della versione ' + (r.versione || '');
+    const s2 = document.getElementById('chl-s'); if (s2) s2.textContent = r.titolo || 'Cosa è cambiato dall\'ultima versione';
+    const ul = document.getElementById('chl-list');
+    if (ul) ul.innerHTML = r.voci.map((v, i) => `<li style="animation-delay:${i * 60}ms">${escHtml(v)}</li>`).join('');
+    const ov = document.getElementById('chl-ov'); if (ov) { ov.classList.add('open'); ov.setAttribute('aria-hidden', 'false'); }
+  }
+  function chiudiChangelog() {
+    const ov = document.getElementById('chl-ov'); if (ov) { ov.classList.remove('open'); ov.setAttribute('aria-hidden', 'true'); }
+    if (_chlId) call('changelog_visto', _chlId).catch(() => {});
   }
 
   function waitForPywebview() {    return new Promise(resolve => {
@@ -275,7 +294,7 @@ const App = (() => {
   }
 
   /* ── View router ────────────────────────────────────────────────────── */
-  const _VIEW_DEPTH = { home: 0, config: 0, client: 1, form: 2 };
+  const _VIEW_DEPTH = { home: 0, config: 0, ras: 1, client: 1, form: 2 };
 
   function showView(name, opts = {}) {
     const prevDepth = _VIEW_DEPTH[state.view] ?? 0;
@@ -293,7 +312,7 @@ const App = (() => {
     const bcSep2 = document.getElementById('bc-sep2');
     const bcChapter = document.getElementById('bc-chapter');
 
-    if (name === 'home' || name === 'config') {
+    if (name === 'home' || name === 'config' || name === 'ras') {
       bc.style.display = 'none';
     } else {
       bc.style.display = 'flex';
@@ -636,6 +655,207 @@ const App = (() => {
     if (res?.error) toast(res.error, 'error');
   }
 
+
+  /* ══ JSON dei tecnici da Drive (maschera in sovrimpressione) ══════════ */
+  const DRIVE_URL = TECH_DRIVE_URL;
+  const driveSt = { clienti: null, filtro: '', ordine: 'az', recenti: 0, lettera: '', cliente: null, sedi: null, caricando: false, err: '' };
+  const _MESI_IT = ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+
+  async function apriDrive() {
+    const ov = document.getElementById('drv-ov'); if (!ov) return;
+    ov.classList.add('open'); ov.setAttribute('aria-hidden', 'false');
+    driveSt.cliente = null; driveSt.sedi = null; driveSt.err = '';
+    document.addEventListener('keydown', _driveKey);
+    if (!driveSt.clienti) await _driveCarica(false); else _renderDrive();
+    setTimeout(() => document.getElementById('drv-q')?.focus(), 250);
+  }
+  function driveChiudi() {
+    const ov = document.getElementById('drv-ov'); if (!ov) return;
+    ov.classList.remove('open'); ov.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', _driveKey);
+  }
+  function _driveKey(e) { if (e.key === 'Escape') { driveSt.cliente ? driveIndietro() : driveChiudi(); } }
+  async function driveApriBrowser() { const r = await call('open_url', DRIVE_URL); if (r?.error) toast(r.error, 'error'); }
+  async function driveApriClienteBrowser() {
+    if (!driveSt.cliente) return;
+    const r = await call('open_url', 'https://drive.google.com/drive/folders/' + driveSt.cliente.id);
+    if (r?.error) toast(r.error, 'error');
+  }
+  async function driveApriUrl(id) { const r = await call('open_url', 'https://drive.google.com/drive/folders/' + id); if (r?.error) toast(r.error, 'error'); }
+  async function driveAggiorna() { driveSt.cliente = null; driveSt.sedi = null; await _driveCarica(true); }
+  let _drvTimer = null;
+  async function _driveCarica(forza) {
+    driveSt.caricando = !driveSt.clienti; driveSt.err = ''; _renderDrive();
+    const r = await call('drive_clienti', !!forza);
+    if (!r || r.error) { driveSt.caricando = false; driveSt.err = r?.error || 'Impossibile leggere Drive.'; _renderDrive(); return; }
+    _driveApplica(r);
+  }
+  function _driveApplica(r) {
+    driveSt.stato = r.stato || {};
+    if (r.scansionato || !driveSt.stato.attiva) { driveSt.clienti = r.clienti || []; driveSt.nascosti = r.nascosti || 0; }
+    driveSt.caricando = false;
+    clearTimeout(_drvTimer);
+    if (driveSt.stato.attiva) _drvTimer = setTimeout(_drivePoll, 1000);
+    if (!driveSt.cliente && document.getElementById('drv-ov')?.classList.contains('open')) {
+      // non rifare la pagina mentre l'utente scrive: aggiorno solo barra e lista
+      if (document.getElementById('drive-lista')) { _renderDriveBarra(); _renderDriveLista(true); }
+      else _renderDrive();
+    }
+  }
+  async function _drivePoll() {
+    if (!document.getElementById('drv-ov')?.classList.contains('open')) { _drvTimer = setTimeout(_drivePoll, 2000); return; }
+    const r = await call('drive_stato');
+    if (r && !r.error) _driveApplica(r);
+    else _drvTimer = setTimeout(_drivePoll, 2000);
+  }
+  function _renderDriveBarra() {
+    const el = document.getElementById('drv-scan'); if (!el) return;
+    const s = driveSt.stato || {};
+    if (!s.attiva) { el.style.display = 'none'; return; }
+    const p = s.totale ? Math.round(100 * s.fatti / s.totale) : 0;
+    el.style.display = 'block';
+    el.innerHTML = `<div class="drv-scan-t">Leggo le date di caricamento… ${s.fatti}/${s.totale}</div><div class="drv-scan-bar"><i style="width:${p}%"></i></div>`;
+  }
+  function driveFiltro(v) { driveSt.filtro = v || ''; _renderDriveLista(); }
+  function driveOrdine(v) { driveSt.ordine = v; _renderDrive(); }
+  function driveRecenti(g) { driveSt.recenti = driveSt.recenti === g ? 0 : g; _renderDrive(); }
+  function driveLettera(l) { driveSt.lettera = driveSt.lettera === l ? '' : l; _renderDrive(); }
+  async function driveScegli(i) {
+    const c = (driveSt.clienti || []).find(x => x.id === i);
+    if (!c) return;
+    driveSt.cliente = c; driveSt.sedi = null; driveSt.err = ''; driveSt.caricando = true; _renderDrive();
+    const r = await call('drive_cartelle', c.id);
+    driveSt.caricando = false;
+    if (!r || r.error) driveSt.err = r?.error || 'Errore nella ricerca.';
+    else driveSt.sedi = r.sedi;
+    _renderDrive();
+  }
+  function driveIndietro() { driveSt.cliente = null; driveSt.sedi = null; driveSt.err = ''; _renderDrive(); }
+  async function driveScarica(fid, nome) {
+    showLoading('Download del JSON…');
+    let res; try { res = await call('drive_scarica', fid, nome); } finally { hideLoading(); }
+    if (!res || res.error) { toast(res?.error || 'Download non riuscito', 'error', 7000); return; }
+    driveChiudi();
+    handleJsonLoaded(res);
+  }
+  function _escD(s) { return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function _dataIt(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); if (!m) return '';
+    return `${+m[3]} ${_MESI_IT[+m[2] - 1]} ${m[1]}`;
+  }
+  function _fa(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); if (!m) return '';
+    const g = Math.round((Date.now() - new Date(+m[1], +m[2] - 1, +m[3]).getTime()) / 86400000);
+    if (g <= 0) return 'oggi'; if (g === 1) return 'ieri'; if (g < 31) return g + ' giorni fa';
+    if (g < 365) return Math.round(g / 30) + (Math.round(g / 30) === 1 ? ' mese fa' : ' mesi fa');
+    return Math.round(g / 365) + (Math.round(g / 365) === 1 ? ' anno fa' : ' anni fa');
+  }
+  const _IC_FOLDER = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const _IC_PIN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  const _IC_DL = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  const _IC_FILE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+  function _renderDrive() {
+    const b = document.getElementById('drive-body'); if (!b) return;
+    const sub = document.getElementById('drv-sub');
+    if (sub) sub.textContent = driveSt.cliente ? driveSt.cliente.nome : 'Scegli il cliente e scarica il JSON caricato dal tecnico';
+    if (!driveSt.cliente && !driveSt.err && driveSt.stato?.attiva && !(driveSt.clienti && driveSt.clienti.length)) {
+      const st = driveSt.stato, p = st.totale ? Math.round(100 * st.fatti / st.totale) : 0;
+      b.innerHTML = `<div class="drv-load"><div class="drv-spin"></div>
+        <div class="drv-load-t">Preparo l'elenco dei clienti con DVR…</div>
+        <div class="drv-load-s">Solo la prima volta (qualche minuto): controllo ${st.fatti}/${st.totale} clienti su Drive</div>
+        <div class="drv-scan-bar" style="width:min(360px,80%)"><i style="width:${p}%"></i></div></div>`; return;
+    }
+    if (driveSt.caricando) {
+      b.innerHTML = `<div class="drv-load"><div class="drv-spin"></div>
+        <div class="drv-load-t">${driveSt.cliente ? 'Cerco la cartella DVR di ' + _escD(driveSt.cliente.nome) + '…' : 'Leggo l\'elenco clienti da Drive…'}</div>
+        <div class="drv-load-s">Può servire qualche secondo</div></div>`; return;
+    }
+    if (driveSt.err) {
+      b.innerHTML = `<div class="drv-load"><div class="drv-load-t" style="color:#b91c1c">${_escD(driveSt.err)}</div>
+        <button class="drv-btn drv-btn--solid" onclick="App.${driveSt.cliente ? 'driveIndietro' : 'driveAggiorna'}()">Riprova</button></div>`; return;
+    }
+    if (driveSt.cliente) { _renderDriveCliente(b); return; }
+    const chip = (lbl, on, fn) => `<button class="drv-chip ${on ? 'on' : ''}" onclick="${fn}">${lbl}</button>`;
+    const lettere = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    b.innerHTML = `<div class="drv-tools">
+        <div class="drv-search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="drv-q" type="search" autocomplete="off" placeholder="Cerca cliente…" value="${_escD(driveSt.filtro)}" oninput="App.driveFiltro(this.value)"></div>
+        <select class="drv-sel" onchange="App.driveOrdine(this.value)" title="Ordinamento">
+          <option value="az" ${driveSt.ordine === 'az' ? 'selected' : ''}>Nome A → Z</option>
+          <option value="za" ${driveSt.ordine === 'za' ? 'selected' : ''}>Nome Z → A</option>
+          <option value="new" ${driveSt.ordine === 'new' ? 'selected' : ''}>Ultimo caricamento: dal più recente</option>
+          <option value="old" ${driveSt.ordine === 'old' ? 'selected' : ''}>Ultimo caricamento: dal meno recente</option>
+        </select>
+        <button class="drv-btn" onclick="App.driveAggiorna()" title="Rilegge l'elenco da Drive">↻ Aggiorna</button>
+      </div>
+      <div class="drv-chips">
+        ${chip('Tutti', !driveSt.recenti, 'App.driveRecenti(0)')}${chip('Ultimi 7 giorni', driveSt.recenti === 7, 'App.driveRecenti(7)')}${chip('Ultimi 30 giorni', driveSt.recenti === 30, 'App.driveRecenti(30)')}
+        <span class="drv-chips-sep"></span>
+        <div class="drv-az">${lettere.map(l => `<button class="${driveSt.lettera === l ? 'on' : ''}" onclick="App.driveLettera('${l}')">${l}</button>`).join('')}</div>
+      </div>
+      <div id="drv-scan" class="drv-scan" style="display:none"></div>
+      <div class="drv-count" id="drv-count"></div>
+      <div id="drive-lista" class="drv-list"></div>`;
+    _renderDriveBarra(); _renderDriveLista();
+  }
+
+  function _renderDriveLista(noAnim) {
+    const l = document.getElementById('drive-lista'); if (!l) return;
+    const q = driveSt.filtro.trim().toLowerCase();
+    let v = (driveSt.clienti || []).filter(c => !q || c.nome.toLowerCase().includes(q));
+    if (driveSt.lettera) v = v.filter(c => c.nome.trim().toUpperCase().startsWith(driveSt.lettera));
+    if (driveSt.recenti) {
+      const lim = new Date(Date.now() - driveSt.recenti * 86400000).toISOString().slice(0, 10);
+      v = v.filter(c => (c.ultimo || '') >= lim);
+    }
+    const cmp = {
+      new: (a, b) => (b.ultimo || '').localeCompare(a.ultimo || '') || a.nome.localeCompare(b.nome, 'it'),
+      old: (a, b) => (!a.ultimo - !b.ultimo) || (a.ultimo || '').localeCompare(b.ultimo || '') || a.nome.localeCompare(b.nome, 'it'),
+      az: (a, b) => a.nome.localeCompare(b.nome, 'it'), za: (a, b) => b.nome.localeCompare(a.nome, 'it'),
+      new: (a, b) => (b.ultimo || '').localeCompare(a.ultimo || '') || a.nome.localeCompare(b.nome, 'it'),
+      old: (a, b) => (a.ultimo || '').localeCompare(b.ultimo || '') || a.nome.localeCompare(b.nome, 'it'),
+    }[driveSt.ordine];
+    v = v.slice().sort(cmp);
+    const cnt = document.getElementById('drv-count');
+    if (cnt) cnt.textContent = `${v.length} client${v.length === 1 ? 'e' : 'i'} con DVR` + (v.length > 150 ? ' · mostrati i primi 150, restringi la ricerca' : '');
+    if (!v.length) { l.innerHTML = `<div class="drv-empty">Nessun cliente trovato con questi filtri.</div>`; return; }
+    l.innerHTML = v.slice(0, 150).map((c, i) => `<button class="drv-row" style="${noAnim ? 'animation:none' : 'animation-delay:' + Math.min(i, 14) * 22 + 'ms'}" data-id="${_escD(c.id)}" onclick="App.driveScegli(this.dataset.id)">
+        <span class="drv-row-ic">${_IC_FOLDER}</span><span class="drv-row-n">${_escD(c.nome)}</span>
+        ${c.ultimo ? `<span class="drv-row-d" title="Data dell'ultimo caricamento">Caricato il ${_escD(_dataIt(c.ultimo))}</span>` : ''}
+        
+        <svg class="drv-row-go" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>`).join('');
+  }
+
+  function _renderDriveCliente(b) {
+    const c = driveSt.cliente, sedi = driveSt.sedi || [];
+    const nJ = sedi.reduce((n, s) => n + s.file.length, 0);
+    let h = `<div class="drv-clhead">
+        <button class="drv-btn" onclick="App.driveIndietro()">← Tutti i clienti</button>
+        <div class="drv-clhead-n"><div class="drv-clhead-t">${_escD(c.nome)}</div>
+          <div class="drv-clhead-s">${sedi.length ? `${sedi.length} ${sedi.length === 1 ? 'sede' : 'sedi'} · ${nJ} JSON disponibili` : 'Nessun JSON disponibile'}</div></div>
+        <button class="drv-btn" onclick="App.driveApriClienteBrowser()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Apri il cliente nel browser</button></div>`;
+    if (!sedi.length) {
+      h += `<div class="drv-empty"><b>Questo cliente non è gestibile dal software.</b><br>Non ha nessuna cartella DVR con un JSON.</div>`;
+    } else {
+      if (sedi.length > 1) h += `<div class="drv-hint">Questo cliente ha più sedi: scegli quella che ti serve.</div>`;
+      h += `<div class="drv-sedi">` + sedi.map((s, si) => `<div class="drv-sede" style="animation-delay:${si * 70}ms">
+          <div class="drv-sede-h"><span class="drv-sede-ic">${_IC_PIN}</span>
+            <div class="drv-sede-tx"><div class="drv-sede-via">${_escD(s.indirizzo)}</div>
+              <div class="drv-sede-m">${s.anno ? `<span class="drv-tag">Anno ${_escD(s.anno)}</span>` : ''}<span class="drv-tag drv-tag--g">${s.file.length} ${s.file.length === 1 ? 'JSON' : 'JSON'}</span></div></div>
+            <button class="drv-btn drv-btn--sm" data-id="${_escD(s.dvr_id)}" onclick="App.driveApriUrl(this.dataset.id)" title="Apre la cartella DVR di questa sede nel browser">Apri cartella</button></div>
+          <div class="drv-files">` + s.file.map((f, k) => `<div class="drv-file ${k === 0 ? 'top' : ''}">
+              <span class="drv-file-ic">${_IC_FILE}</span>
+              <div class="drv-file-tx"><div class="drv-file-d">${_escD(_dataIt(f.data) || f.nome)}${k === 0 ? '<span class="drv-tag drv-tag--ok">Più recente</span>' : ''}</div>
+                <div class="drv-file-n">${_escD(f.nome)}${f.data ? ' · ' + _escD(_fa(f.data)) : ''}</div></div>
+              <button class="drv-btn ${k === 0 ? 'drv-btn--solid' : ''}" data-fid="${_escD(f.id)}" data-nome="${_escD(f.nome)}"
+                onclick="App.driveScarica(this.dataset.fid, this.dataset.nome)">${_IC_DL} Scarica e apri</button></div>`).join('') + `</div></div>`).join('') + `</div>`;
+    }
+    b.innerHTML = h;
+  }
+
   async function loadJsonFromPath(path) {
     showLoading('Lettura JSON…');
     const res = await call('load_json_from_path', path);
@@ -644,7 +864,18 @@ const App = (() => {
     handleJsonLoaded(res);
   }
 
+  async function _apriRasDaJson(res) {
+    state.ras.cartella = res.cartella;
+    state.ras.riep = res.riepilogo;
+    showView('ras');
+    const r = await call('ras_elenco');
+    state.ras.recenti = (r && r.pacchetti) || [];
+    _renderRas();
+    toast('Checklist RAS riconosciuta: apro la sezione RAS', 'success');
+  }
+
   function handleJsonLoaded(res) {
+    if (res && res.ras) { _apriRasDaJson(res); return; }
     state.jsonRaw       = res.json_raw;
     state.extracted     = res.extracted;
     state.autoFields    = res.assessment?.auto || {};
@@ -948,6 +1179,179 @@ const App = (() => {
     } catch (e) {}
   }
 
+
+  /* ── RAS: Relazione Annuale Sicurezza condomini ────────────────────────── */
+  state.ras = state.ras || { cartella: '', riep: null, recenti: [] };
+
+  // Moduli disponibili per il cliente: DVR sempre; RAS solo se esiste un JSON RAS dello stesso nome.
+  async function _aggiornaModuli() {
+    const nome = state.currentClient?.name || '';
+    let r = null;
+    try { r = await call('moduli_cliente', nome); } catch (e) {}
+    const ras = !!(r && r.ras);
+    state.modRasCartella = ras ? r.ras_cartella : '';
+    const it = document.querySelector('.cxacc-item[data-mod="ras"]');
+    if (!it) return;
+    it.classList.toggle('cxacc-item--off', !ras);
+    if (!ras) it.classList.remove('open');
+    it.querySelector('.cxmenu-group-ic')?.classList.toggle('cxmenu-group-ic--soon', !ras);
+    const chip = document.getElementById('mod-ras-chip'); if (chip) chip.style.display = ras ? 'none' : '';
+  }
+
+  async function apriRasCliente() {
+    const cart = state.modRasCartella;
+    await apriRas();
+    const i = (state.ras.recenti || []).findIndex(p => p.cartella === cart);
+    if (i >= 0) await rasApriRecente(i);
+  }
+
+  async function apriRas() {
+    showView('ras');
+    const r = await call('ras_elenco');
+    state.ras.recenti = (r && r.pacchetti) || [];
+    _renderRas();
+  }
+
+  async function rasScegli() {
+    showLoading('Caricamento JSON RAS…');
+    let res;
+    try { res = await call('ras_apri_dialog'); } finally { hideLoading(); }
+    if (!res || res.cancelled) return;
+    if (res.error) { toast(res.error, 'error', 6000); return; }
+    state.ras.cartella = res.cartella;
+    state.ras.riep = res.riepilogo;
+    const r = await call('ras_elenco');
+    state.ras.recenti = (r && r.pacchetti) || [];
+    _renderRas();
+    toast('JSON RAS caricato', 'success');
+  }
+
+  async function rasApriRecente(i) {
+    const p = (state.ras.recenti || [])[i];
+    if (!p) return;
+    const res = await call('ras_carica', p.cartella);
+    if (!res || res.error) { toast(res?.error || 'JSON non leggibile', 'error'); return; }
+    state.ras.cartella = res.cartella;
+    state.ras.riep = res.riepilogo;
+    _renderRas();
+  }
+
+  function rasChiudi() {
+    state.ras.cartella = '';
+    state.ras.riep = null;
+    _renderRas();
+  }
+
+  let _rasSaveT = null;
+  function rasCampo(k, v) {
+    const r = state.ras.riep; if (!r) return;
+    if (k === 'anno_riferimento') v = v === '' ? '' : (parseInt(v, 10) || v);
+    r.identificazione[k] = v;
+    clearTimeout(_rasSaveT);
+    _rasSaveT = setTimeout(() => {
+      call('ras_salva_dati', state.ras.cartella, r.identificazione).catch(() => {});
+    }, 500);
+  }
+
+  async function rasGenera() {
+    if (!state.ras.cartella) return;
+    try { await call('ras_salva_dati', state.ras.cartella, state.ras.riep.identificazione); } catch (e) {}
+    showLoading('Generazione documenti RAS…');
+    let res;
+    try { res = await call('ras_genera', state.ras.cartella, true); } finally { hideLoading(); }
+    if (!res || res.error) { toast(res?.error || 'Errore generazione RAS', 'error', 7000); return; }
+    const man = res.foto_mancanti || [];
+    toast(`Generati ${res.file.length} documenti` + (man.length ? ` · ${man.length} foto da inserire a mano nel Word` : ''),
+          man.length ? 'warning' : 'success', 6000);
+    state.ras.ultimo = res;
+    _renderRas();
+  }
+
+  async function rasApriCartella() {
+    const res = await call('ras_apri_cartella', state.ras.cartella);
+    if (res && res.error) toast(res.error, 'error');
+  }
+
+  function _rasIn(k, lab, v, tipo) {
+    return `<label class="ras-f"><span>${lab}</span>
+      <input type="${tipo || 'text'}" value="${escAttr(v == null ? '' : v)}"
+        oninput="App.rasCampo('${k}', this.value)"></label>`;
+  }
+
+  function _renderRas() {
+    const box = document.getElementById('ras-body');
+    if (!box) return;
+    const st = state.ras;
+    if (!st.cartella || !st.riep) {
+      const rec = (st.recenti || []).map((p, i) => `
+        <button class="ras-rec" onclick="App.rasApriRecente(${i})">
+          <b>${escHtml(p.nome)}</b>
+          <span>${new Date(p.modificato * 1000).toLocaleDateString('it-IT')}</span>
+        </button>`).join('');
+      box.innerHTML = `
+        <div class="ras-empty">
+          <div class="ras-empty-t">Nessun JSON RAS caricato</div>
+          <div class="ras-empty-s">Premi «Carica JSON RAS» e scegli il file .json esportato dalla checklist.
+            Le foto non si importano: nel Word trovi un segnaposto da sostituire a mano.</div>
+        </div>
+        ${rec ? `<div class="dash-panel ras-panel"><div class="panel-head"><span class="panel-t">JSON già caricati</span></div>
+          <div class="ras-recs">${rec}</div></div>` : ''}`;
+      return;
+    }
+    const r = st.riep, id = r.identificazione || {};
+    const fasce = [['<12', 'Inferiore a 12 m'], ['12-24', '12 – 24 m (LP0)'], ['24-54', '24 – 54 m (LP1)'],
+                   ['54-80', '54 – 80 m (LP2)'], ['>80', 'Superiore a 80 m (LP3)']];
+    const optF = fasce.map(([v, t]) =>
+      `<option value="${escAttr(v)}" ${String(id.altezza_antincendio) === v ? 'selected' : ''}>${t}</option>`).join('');
+    const dataIso = String(id.data_emissione || '').slice(0, 10);
+    const sez = (r.sezioni || []).map(x => `
+      <tr><td>${escHtml(x.rif)}</td><td>${escHtml(x.titolo)}</td>
+        <td>${x.presente === true ? 'Sì' : x.presente === false ? 'No' : '—'}</td>
+        <td>${x.misure}</td><td class="${x.no ? 'ras-bad' : ''}">${x.no}</td>
+        <td>${x.nc || ''}</td><td>${x.foto || ''}</td></tr>`).join('');
+    const forn = (r.fornitori || []).map(f =>
+      `<li>${escHtml(f.impresa || 'Impresa')} <span>${escHtml(f.data || '')}</span></li>`).join('');
+    const ult = st.ultimo && st.ultimo.file ? `
+      <div class="ras-done">Documenti generati:
+        ${st.ultimo.file.map(f => `<div>${escHtml(f.split(/[\\/]/).pop())}</div>`).join('')}
+        <button class="alg-btn" onclick="App.rasApriCartella()">Apri cartella</button></div>` : '';
+    box.innerHTML = `
+      <div class="ras-top">
+        <div class="ras-name">${escHtml(id.nome || 'Condominio')}</div>
+        <button class="alg-btn" onclick="App.rasChiudi()">Cambia JSON</button>
+        <button class="alg-btn alg-btn--solid" onclick="App.rasGenera()">Genera documenti RAS</button>
+      </div>
+      <div class="ras-kpi">
+        <div><b>${r.misure}</b><span>Misure</span></div>
+        <div class="${r.non_attuate ? 'ras-kpi-bad' : ''}"><b>${r.non_attuate}</b><span>Non attuate</span></div>
+        <div><b>${r.non_compilate}</b><span>Non compilate</span></div>
+        <div><b>${r.foto_da_inserire || 0}</b><span>Foto da inserire a mano</span></div>
+        <div><b>${(r.fornitori || []).length}</b><span>Fornitori</span></div>
+      </div>
+      ${ult}
+      <div class="dash-panel ras-panel"><div class="panel-head"><span class="panel-t">Dati generali (modificabili)</span></div>
+        <div class="ras-grid">
+          ${_rasIn('nome', 'Condominio', id.nome)}
+          ${_rasIn('scala', 'Scala', id.scala)}
+          ${_rasIn('via_civico', 'Via e numero', id.via_civico || id.indirizzo)}
+          ${_rasIn('cap', 'CAP', id.cap)}
+          ${_rasIn('comune', 'Comune', id.comune)}
+          ${_rasIn('provincia', 'Provincia', id.provincia)}
+          ${_rasIn('amministratore', 'Amministratore', id.amministratore)}
+          ${_rasIn('anno_riferimento', 'Anno', id.anno_riferimento, 'number')}
+          ${_rasIn('data_emissione', 'Data emissione', dataIso, 'date')}
+          <label class="ras-f"><span>Altezza antincendio</span>
+            <select onchange="App.rasCampo('altezza_antincendio', this.value)"><option value="">—</option>${optF}</select></label>
+        </div>
+      </div>
+      <div class="dash-panel ras-panel"><div class="panel-head"><span class="panel-t">Punti di controllo</span></div>
+        <div class="ras-tw"><table class="ras-t"><thead><tr><th>Rif.</th><th>Punto</th><th>Presente</th>
+          <th>Misure</th><th>No</th><th>N.C.</th><th>Foto</th></tr></thead><tbody>${sez}</tbody></table></div>
+      </div>
+      ${forn ? `<div class="dash-panel ras-panel"><div class="panel-head"><span class="panel-t">Fornitori verificati
+        (una checklist ciascuno)</span></div><ul class="ras-forn">${forn}</ul></div>` : ''}`;
+  }
+
   function setClientSection(name) {
     const panes = {
       menu: 'sec-menu', capitoli: 'sec-capitoli', allegati: 'sec-allegati',
@@ -965,6 +1369,7 @@ const App = (() => {
       t.classList.toggle('cx-tab--active', t.dataset.sec === name);
     });
     state.clientSection = name;
+    if (name === 'menu') _aggiornaModuli();
     // Il selettore Tipo DVR e le 3 fasi (Controlla dati / Compila capitoli /
     // Genera DVR) compaiono SOLO dentro un elemento del DVR (Capitoli, Allegati,
     // Piano, Lettera), NON sul menu "Cosa vuoi gestire?" né su HACCP/RAS.
@@ -1179,7 +1584,7 @@ const App = (() => {
           ${thumb}
           <label class="alg32-nec"><input type="checkbox" ${on ? 'checked' : ''}
             onchange="App.onAlg32Toggle('${s.id}', this.checked)"> Necessario</label>
-          ${label ? `<span class="alg32-lbl">${escHtml(label)}</span>` : '<span class="alg32-lbl alg32-lbl--muted">cartello</span>'}
+          ${s.img ? '' : (label ? `<span class="alg32-lbl">${escHtml(label)}</span>` : '<span class="alg32-lbl alg32-lbl--muted">cartello</span>')}
           <input class="alg32-pos" type="text" placeholder="Posizione consigliata…"
             value="${escAttr(pos)}" oninput="App.onAlg32Pos('${s.id}', this.value)">
         </div>`;
@@ -1254,6 +1659,11 @@ const App = (() => {
          <input class="piano-in" type="text" placeholder="Tecnico dedicato (Nome Cognome)" value="${escAttr(tec.nome||'')}" oninput="App.onPianoTecnico('nome', this.value)">
          <input class="piano-in" type="text" placeholder="Telefono" value="${escAttr(tec.telefono||'')}" oninput="App.onPianoTecnico('telefono', this.value)">
          <input class="piano-in" type="text" placeholder="Email" value="${escAttr(tec.email||'')}" oninput="App.onPianoTecnico('email', this.value)">
+       </div>
+       <div class="piano-tec">
+         <input class="piano-in" type="text" placeholder="Safety Account (Nome Cognome)" value="${escAttr(tec.sa_nome||'')}" oninput="App.onPianoTecnico('sa_nome', this.value)">
+         <input class="piano-in" type="text" placeholder="Safety Account — Telefono" value="${escAttr(tec.sa_telefono||'')}" oninput="App.onPianoTecnico('sa_telefono', this.value)">
+         <input class="piano-in" type="text" placeholder="Safety Account — Email" value="${escAttr(tec.sa_email||'')}" oninput="App.onPianoTecnico('sa_email', this.value)">
        </div>
        ${_estintoriPesoHtml(tec)}
        <div class="piano-actions">
@@ -1968,8 +2378,8 @@ const App = (() => {
       const hasPrev = idx > 0;
       const hasNext = idx < active.length - 1;
       const nextLabel = hasNext ? 'Prossimo Capitolo →' : 'Fine — Torna alla Lista ✓';
-      // Cap6 è ora internalizzato (nessun Excel) → niente tasto "Apri fogli Excel".
-      const hasFogli = ['7', '10', '11'].includes(String(chapterId));
+      // Cap6, Cap7 e Cap10 sono internalizzati (nessun Excel) → niente tasto "Apri fogli Excel".
+      const hasFogli = false;  // Cap6, 7, 10 e 11 sono internalizzati (nessun Excel)
       const btnFogli = hasFogli ? `
         <button class="btn btn-ghost" id="btn-fogli-xls" onclick="App.apriFogliCalcolo('${chapterId}')"
           title="Apre in Excel i fogli di calcolo del capitolo (schede/gruppi selezionati)">
@@ -2007,11 +2417,14 @@ const App = (() => {
     if (savedFormData) {
       for (const fd of state.manualFields) {
         if (fd.type && fd.type.endsWith('_editor')
-            && savedFormData[fd.id] && typeof savedFormData[fd.id] === 'object') {
+            && savedFormData[fd.id] && typeof savedFormData[fd.id] === 'object'
+            && !(fd.id === 'cap10_editor' && savedFormData[fd.id].versione !== 2)
+            && !(fd.id === 'cap11_editor' && savedFormData[fd.id].versione !== 2)) {
           state.tablePrefill[fd.id] = savedFormData[fd.id];
         }
       }
     }
+    await _attrShareApply(chapterId);
 
     renderManualFields(state.manualFields, state.tablePrefill);
 
@@ -2649,6 +3062,7 @@ const App = (() => {
       const cap11Data = (prefill[fd.id] || state.tablePrefill[fd.id] || {});
       initCap11Editor(fd.id, cap11Data);
       wrap.innerHTML = buildCap11Editor(fd.id, cap11Data);
+      setTimeout(() => _c11InitRisultati(fd.id), 0);
 
     } else if (fd.type === 'cap21_editor') {
       wrap.style.gridColumn = '1 / -1';
@@ -3109,6 +3523,12 @@ const App = (() => {
   }
 
   /* ── Gruppo pronto soccorso (calcolo lato client) ───────────────────── */
+  function onGruppoManuale(val) {
+    state.formValues['gruppo_manuale'] = val || '';
+    updateGruppo();
+    saveChapterDraft();
+  }
+
   function updateGruppo() {
     // Totale lavoratori: il campo unico `num_lavoratori` (dal JSON) è la fonte;
     // fallback alla vecchia somma uomini+donne+minorenni per i JSON vecchi.
@@ -3131,12 +3551,14 @@ const App = (() => {
 
     box.style.display = 'flex';
     let gruppo = '', title = '', spieg = '';
+    const man = String(state.formValues['gruppo_manuale'] || '').toUpperCase();
     if      (agr && tot > 5)      { gruppo = 'A3'; title = 'Gruppo A3'; spieg = `Attività agricola · ${tot} lavoratori a tempo pieno`; }
     else if (tot > 5 && idx > 4) { gruppo = 'A2'; title = 'Gruppo A2'; spieg = `${tot} lavoratori · indice INAIL ${idx.toFixed(2)} > 4`; }
     else if (tot > 5)            { gruppo = 'A1'; title = 'Gruppo A1'; spieg = `${tot} lavoratori · indice INAIL ${idx.toFixed(2)} ≤ 4`; }
     else if (tot >= 3)           { gruppo = 'B';  title = 'Gruppo B';  spieg = `${tot} lavoratori`; }
     else                         { gruppo = 'C';  title = 'Gruppo C';  spieg = `${tot} lavoratori totali`; }
 
+    if (['A1', 'A2', 'A3', 'B', 'C'].includes(man)) { spieg = `Scelto a mano (calcolo automatico: ${gruppo})`; gruppo = man; title = 'Gruppo ' + man; }
     const levelClass = gruppo.startsWith('A') ? 'level-a'
                      : (gruppo === 'B' ? 'level-b' : 'level-c');
     box.className = `gruppo-box ${levelClass}`;
@@ -3145,7 +3567,11 @@ const App = (() => {
       <div class="gruppo-info">
         <div class="gruppo-title">${escHtml(title)} — DM 388/2003</div>
         <div class="gruppo-desc">${escHtml(spieg)}</div>
-      </div>`;
+      </div>
+      <select class="field-input" style="max-width:150px;margin-left:auto" title="Scegli il gruppo a mano"
+        onchange="App.onGruppoManuale(this.value)">
+        ${['', 'A1', 'A2', 'A3', 'B', 'C'].map(g => `<option value="${g}"${g === man ? ' selected' : ''}>${g ? 'Gruppo ' + g + ' (manuale)' : 'Automatico'}</option>`).join('')}
+      </select>`;
 
     state.formValues['gruppo_pronto_soccorso'] = gruppo;
     state.autoFields['gruppo_pronto_soccorso'] = gruppo;
@@ -3466,6 +3892,7 @@ const App = (() => {
     const g = state.formValues[fieldId].gruppi[gi];
     if (key === 'attrezzature_text') {
       g.attrezzature = value.split('\n').map(s => s.trim()).filter(Boolean);
+      _attrShareSave('2', fieldId);
     } else if (key === 'chimici_text') {
       g.prodotti_chimici = value.split('\n').map(s => s.trim()).filter(Boolean);
     } else if (key === 'agenti_cancerogeni_text') {
@@ -4036,6 +4463,7 @@ const App = (() => {
     }
     arr.push({ ref: arr.length + 1, nome, ce: 'Sì', ante_ce: 'No', selezionata: true });
     saveChapterDraft();
+    _attrShareSave('4', fieldId);
     _rerenderCap4Attr(fieldId);
   }
 
@@ -4045,6 +4473,7 @@ const App = (() => {
     arr.splice(idx, 1);
     arr.forEach((a, i) => { a.ref = i + 1; });
     saveChapterDraft();
+    _attrShareSave('4', fieldId);
     _rerenderCap4Attr(fieldId);
   }
 
@@ -4461,6 +4890,51 @@ const App = (() => {
   function _rerenderCap14Prods(fieldId) {
     const box = document.getElementById(`cap14-prods-${fieldId}`);
     if (box) box.innerHTML = _cap14ProductsHtml(fieldId);
+  }
+
+  // Elenco attrezzature UNIVOCO Cap2↔Cap4: ogni modifica si salva sul backend (fonte
+  // unica per cliente) e l'altro capitolo si allinea all'apertura e all'export.
+  let _attrShareT = null;
+  function _attrShareSave(origine, fieldId) {
+    const jp = state.currentClient?.json_path;
+    const ed = state.formValues[fieldId] || {};
+    if (!jp) return;
+    let payload;
+    if (origine === '4') {
+      payload = (ed.attrezzature || []).map(a => (a.nome || '').trim()).filter(Boolean);
+    } else {
+      payload = {};
+      (ed.gruppi || []).forEach(g => {
+        const k = (g.nome || '').trim().toLowerCase();
+        if (k) payload[k] = (g.attrezzature || []).map(x => String(x).trim()).filter(Boolean);
+      });
+    }
+    clearTimeout(_attrShareT);
+    _attrShareT = setTimeout(() =>
+      call('sync_attrezzature_condivise', jp, origine, payload).catch(() => {}), 300);
+  }
+
+  // All'apertura di Cap2/Cap4: applica l'elenco condiviso sopra la bozza salvata.
+  async function _attrShareApply(chapterId) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !['2', '4'].includes(String(chapterId))) return;
+    const r = await call('get_attrezzature_condivise', jp);
+    const sh = r && r.dati;
+    if (!sh || !Array.isArray(sh.elenco)) return;
+    const K = n => String(n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const ed4 = state.tablePrefill['cap4_editor'];
+    if (String(chapterId) === '4' && ed4 && Array.isArray(ed4.attrezzature)) {
+      const old = {}; ed4.attrezzature.forEach(a => { old[K(a.nome)] = a; });
+      ed4.attrezzature = sh.elenco.map((n, i) => Object.assign(
+        { ce: 'Sì', ante_ce: 'No', selezionata: true }, old[K(n)] || {}, { ref: i + 1, nome: n }));
+    }
+    const ed2 = state.tablePrefill['cap2_gruppi'];
+    if (String(chapterId) === '2' && ed2 && Array.isArray(ed2.gruppi)) {
+      ed2.gruppi.forEach(g => {
+        const l = (sh.gruppi || {})[K(g.nome)];
+        if (Array.isArray(l)) g.attrezzature = l.slice();
+      });
+    }
   }
 
   // #4: lista prodotti CONDIVISA Cap2↔Cap14. A ogni modifica nel Cap14 si salva
@@ -6340,12 +6814,19 @@ const App = (() => {
     }
     // Raggruppa le schede per GRUPPO OMOGENEO, conservando l'indice originale
     // (serve agli handler). Tutti i gruppi vengono mostrati, anche se è uno solo.
+    // Le schede sono raggruppate per MOVIMENTAZIONE (come nel Word: più S + la T),
+    // non per gruppo omogeneo; il gruppo compare nell'intestazione.
     const groups = [];
     const byKey = new Map();
     schede.forEach((s, i) => {
-      const key = (s.gruppo || '').trim() || '—';
+      const key = String(s.mov !== undefined && s.mov !== null ? s.mov : ('g:' + (s.gruppo || '')));
       let g = byKey.get(key);
-      if (!g) { g = { nome: (s.gruppo || '').trim(), items: [] }; byKey.set(key, g); groups.push(g); }
+      if (!g) {
+        g = { nome: (s.gruppo || '').trim(), mov: s.mov, libera: s.origine === 'libera',
+              gnum: s.gruppo_num || '', descr: s.descrizione || s.carico || '', items: [] };
+        byKey.set(key, g); groups.push(g);
+      }
+      if (!g.descr) g.descr = s.descrizione || s.carico || '';
       g.items.push({ s, i });
     });
     // nomi dei gruppi di ogni blocco (per il pulsante «Seleziona template»)
@@ -6361,8 +6842,8 @@ const App = (() => {
       return `
       <details class="c6n-group c6n-group--acc"${open} data-key="${escAttr(key)}" data-nomi="${escAttr(JSON.stringify(state.cap6GroupMans[gi] || []))}" ontoggle="App.c6CalcToggle(this)">
         <summary class="c6n-group-hdr">
-          <span class="c6n-group-tag">Gruppo ${gi + 1}</span>
-          <span class="c6n-group-nome">${escHtml(g.nome || 'Gruppo omogeneo')}</span>
+          <span class="c6n-group-tag">Movimentazione ${gi + 1}</span>
+          <span class="c6n-group-nome">${escHtml(g.descr || 'Movimentazione')} <small style="opacity:.75">· ${g.gnum ? 'Gruppo ' + escHtml(String(g.gnum)) + ' — ' : ''}${escHtml(g.nome || '')}</small></span>
           <span class="c6n-group-badge">${g.items.length} scheda/e</span>
           <button type="button" class="c6n-group-tpl" title="Usa i modelli del catalogo al posto della valutazione specifica del tecnico"
             onclick="event.preventDefault();event.stopPropagation();App.cap6UsaTemplate('${fieldId}', ${gi}, true)">Seleziona template</button>
@@ -6370,6 +6851,13 @@ const App = (() => {
         </summary>
         <div class="c6n-group-body">
           ${g.items.map(({ s, i }) => s.tipo === 'T' ? _cap6SchedaTHtml(s, i) : _cap6SchedaSHtml(s, i)).join('')}
+          ${g.libera && typeof g.mov === 'number' ? `<div class="c6n-addrow">
+            <b>Aggiungi una scheda S a questa movimentazione</b> (si aggancia alla stessa scheda T):
+            <select id="c6add-sex-${g.mov}"><option value="M">Maschi</option><option value="F">Femmine</option></select>
+            <select id="c6add-eta-${g.mov}"><option value="20-45">20–45 anni</option><option value="altro">Oltre 45 anni</option></select>
+            <button type="button" class="btn btn-outline btn-sm" onclick="App.cap6AddS(${g.mov})">+ Aggiungi scheda S</button>
+            <button type="button" class="btn btn-ghost btn-sm c6n-delmov" onclick="App.cap6DelMov(${g.mov})">Elimina movimentazione</button>
+          </div>` : ''}
         </div>
       </details>`;
     }).join('');
@@ -6377,12 +6865,55 @@ const App = (() => {
     box.innerHTML = `<div class="cap2-section-label">Schede di calcolo — MMC</div>
       ${groupsHtml}
       ${_cap6AddHtml(fieldId)}
+      ${schede.some(x => x.origine === 'libera') ? '<div style="margin:6px 0"><button type="button" class="btn btn-ghost btn-sm" onclick="App.cap6Ripristina()">↺ Ripristina le schede originali</button></div>' : ''}
       <div class="c6n-misure-bar">
         <button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.openCap6Misure()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Misure di prevenzione e protezione</button>
         <span class="cap14-note">Valgono per tutte le schede di tutti i gruppi: verranno spuntate nel modello SCHEDA MOVIMENTAZIONE CARICHI.</span>
       </div>`;
+  }
+
+  // Valutazione libera: il back-office può aggiungere/eliminare schede S.
+  function _cap6FieldId() {
+    const el = document.querySelector('[id^="cap6-native-"]');
+    return el ? el.id.replace('cap6-native-', '') : null;
+  }
+  async function _cap6Reload() {
+    const fid = _cap6FieldId();
+    state.cap6Schede = null;
+    if (fid) await _loadCap6Native(fid);
+  }
+  async function cap6AddS(mov) {
+    const jp = state.currentClient?.json_path; if (!jp) return;
+    const sx = document.getElementById('c6add-sex-' + mov)?.value || 'M';
+    const eta = document.getElementById('c6add-eta-' + mov)?.value || '20-45';
+    const r = await call('cap6_aggiungi_scheda_s', jp, mov, sx, eta);
+    if (!r || !r.ok) { toast((r && r.error) || 'Impossibile aggiungere la scheda', 'error'); return; }
+    await _cap6Reload();
+  }
+  async function cap6DelS(i) {
+    const jp = state.currentClient?.json_path; const s = (state.cap6Schede || [])[i];
+    if (!jp || !s) return;
+    if (!window.confirm(`Eliminare la scheda ${s.n}?`)) return;
+    const r = await call('cap6_elimina_scheda', jp, s.id, false);
+    if (!r || !r.ok) { toast((r && r.error) || 'Impossibile eliminare', 'error'); return; }
+    await _cap6Reload();
+  }
+  async function cap6DelMov(mov) {
+    const jp = state.currentClient?.json_path;
+    const s = (state.cap6Schede || []).find(x => x.mov === mov);
+    if (!jp || !s) return;
+    if (!window.confirm('Eliminare l\'intera movimentazione (tutte le schede S e la scheda T)?')) return;
+    const r = await call('cap6_elimina_scheda', jp, s.id, true);
+    if (!r || !r.ok) { toast((r && r.error) || 'Impossibile eliminare', 'error'); return; }
+    await _cap6Reload();
+  }
+  async function cap6Ripristina() {
+    const jp = state.currentClient?.json_path; if (!jp) return;
+    if (!window.confirm('Ripristinare le schede originali (annulla aggiunte ed eliminazioni)?')) return;
+    const r = await call('cap6_ripristina_schede', jp);
+    if (r && r.ok) await _cap6Reload();
   }
 
   // ── Maschera MISURE di prevenzione/protezione (SCHEDA MOVIMENTAZIONE) ──
@@ -6567,6 +7098,7 @@ const App = (() => {
         <span class="c6n-hdr-t">Sollevamento / abbassamento</span>
         <span class="c6n-sex">${escHtml(s.sesso)} · ${escHtml(etaLbl)}</span>
         ${_cap6ManualeHtml(s)}
+        ${s.origine === 'libera' ? `<button type="button" class="c6n-x" title="Elimina questa scheda S" onclick="App.cap6DelS(${i})">✕</button>` : ''}
       </div>
       ${_cap6DatiTecnicoHtml(s, 'S')}
       <div class="c6n-row2">
@@ -6821,58 +7353,66 @@ const App = (() => {
     ['piano_pare',             'Redazione di un piano PARE (Programma Aziendale per la Riduzione dell\'Esposizione)'],
   ];
 
-  function _c10DefaultGruppo(id, nome, attrDisponibili) {
+  function _c10DefaultGruppo(id, nome) {
     return {
       id, nome: nome || `Gruppo ${id}`,
       sostanze_ototossiche: false, vibrazioni: false,
-      descrizione_attivita: '', rif_ambiente: String(id), rif_fase: String(id),
-      ore_lavoro_gg: 8,
-      attrezzature_selezionate: [],
-      postazioni: [],
+      descrizione_attivita: '', ore_lavoro_gg: 8, misure: [],
     };
   }
 
-  function _c10DefaultPostazione(num) {
-    return {
-      numero: num,
-      condizione_misura: '',
-      sorgenti_rumore: [{ nome: '', m1: '', m2: '', m3: '' }],
-      lavoratori_esposti: [{ gruppo: '', Tm_j: 480 }],
-      misure: [
-        { LAeq: '', LCeq: '', Lpicco: '' },
-        { LAeq: '', LCeq: '', Lpicco: '' },
-        { LAeq: '', LCeq: '', Lpicco: '' },
-      ],
-    };
+  function _c10DefaultMisura() {
+    return { attrezzatura: '', tempo_min: '', laeq: '', lceq: '', lpeak: '' };
   }
 
-  function _c10EnergyAvg(vals) {
-    const valid = vals.map(v => parseFloat(v)).filter(v => !isNaN(v) && v > 0);
-    if (!valid.length) return null;
-    const sum = valid.reduce((a, v) => a + Math.pow(10, v / 10), 0);
-    return 10 * Math.log10(sum / valid.length);
+  const C10_LIVELLI = ['Irrilevante', 'Basso', 'Medio', 'Alto'];
+  const _c10Timers = {};
+
+  // Calcolatore del tempo di esposizione: la somma dei minuti del gruppo non deve
+  // superare 480 (turno di 8 ore).
+  function _c10TotHtml(g) {
+    const tot = (g.misure || []).reduce((a, m) => a + (parseFloat(m.tempo_min) || 0), 0);
+    const over = tot > 480;
+    const col = over ? '#c0392b' : 'var(--gray-600)';
+    return `<span style="font-size:12px;font-weight:700;color:${col}">Tempo totale: ${tot} / 480 min`
+      + (over ? ` — superati di ${tot - 480} min (la somma non deve superare 480)` : ` — residuo ${480 - tot} min`)
+      + `</span>`;
+  }
+  function _c10UpdTot(fieldId, gi) {
+    const g = (state.formValues[fieldId] || {}).gruppi_omogenei?.[gi];
+    const el = document.getElementById(`c10-tot-${fieldId}-${gi}`);
+    if (g && el) el.innerHTML = _c10TotHtml(g);
+  }
+
+  function _c10f(v, d) {
+    if (v === null || v === undefined || (typeof v === 'number' && !isFinite(v))) return '—';
+    return Number(v).toFixed(d === undefined ? 1 : d).replace('.', ',');
   }
 
   function initCap10Editor(fieldId, data) {
-    const gruppi = Array.isArray(data && data.gruppi_omogenei) ? data.gruppi_omogenei : [];
-    const prescrizioni = (data && data.prescrizioni) || {};
-    const attDisp = (data && Array.isArray(data.attrezzature_disponibili)) ? data.attrezzature_disponibili : [];
+    // v2: il formato vecchio (postazioni) non è più leggibile → si ignora.
+    const ok = data && data.versione === 2;
+    const gruppi = ok && Array.isArray(data.gruppi_omogenei) ? data.gruppi_omogenei : [];
+    const prescrizioni = (ok && data.prescrizioni) || {};
     const defaultPrescrizioni = {};
     C10_PRESCRIZIONI.forEach(([k]) => { defaultPrescrizioni[k] = false; });
+    gruppi.forEach(g => { if (!Array.isArray(g.misure)) g.misure = []; });
     state.formValues[fieldId] = {
-      fonometro_tipo: (data && data.fonometro_tipo) || '',
-      attrezzature_disponibili: attDisp,
-      gruppi_omogenei: gruppi.length ? gruppi : [_c10DefaultGruppo(1, '', attDisp)],
+      versione: 2,
+      fonometro_tipo: (ok && data.fonometro_tipo) || '',
+      gruppi_omogenei: gruppi,
       prescrizioni: Object.assign({}, defaultPrescrizioni, prescrizioni),
     };
+    setTimeout(() => gruppi.forEach((_, gi) => _c10Calc(fieldId, gi)), 50);
   }
 
-  function _c10Rebuild(fieldId, keepOpenGi = 0) {
+  function _c10Rebuild(fieldId, keepOpenGi = -1) {
     const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
     if (outer) outer.innerHTML = buildCap10Editor(fieldId, state.formValues[fieldId]);
     setTimeout(() => {
       outer?.querySelectorAll('select:not(.csel-hidden)').forEach(wrapSelectCustom);
-      if (keepOpenGi > 0) toggleC10Gruppo(fieldId, keepOpenGi);
+      if (keepOpenGi >= 0) toggleC10Gruppo(fieldId, keepOpenGi);
+      (state.formValues[fieldId]?.gruppi_omogenei || []).forEach((_, gi) => _c10Calc(fieldId, gi));
     }, 0);
     saveChapterDraft();
   }
@@ -6880,8 +7420,6 @@ const App = (() => {
   function buildCap10Editor(fieldId, data) {
     const ed = state.formValues[fieldId] || {};
     const fonId = ed.fonometro_tipo || '';
-    const fonObj = C10_FONOMETRI.find(f => f.id === fonId);
-    const attDisp = ed.attrezzature_disponibili || [];
     const gruppi = ed.gruppi_omogenei || [];
     const prescrizioni = ed.prescrizioni || {};
 
@@ -6889,12 +7427,7 @@ const App = (() => {
       `<option value="${f.id}"${f.id === fonId ? ' selected' : ''}>${escHtml(f.label)} (Classe ${f.classe})</option>`
     ).join('');
 
-    const classeInfo = fonObj
-      ? `<span class="c10-classe c10-classe-${fonObj.classe}">Strumentazione di Classe ${fonObj.classe} (${fonObj.classe === 'II' ? 'IEC 651/79 e 804/85' : 'IEC 651/79 e 804/85 — precisione'})</span>`
-      : '';
-
-    const gruppiHtml = gruppi.map((g, gi) => _c10GruppoHtml(fieldId, gi, g, attDisp)).join('');
-
+    const gruppiHtml = gruppi.map((g, gi) => _c10GruppoHtml(fieldId, gi, g)).join('');
     const prescHtml = C10_PRESCRIZIONI.map(([key, label]) => `
       <label class="c10-presc-row">
         <input type="checkbox" class="c10-presc-cb" ${prescrizioni[key] ? 'checked' : ''}
@@ -6905,17 +7438,16 @@ const App = (() => {
     return `<div class="c10-editor" id="c10-editor-${fieldId}">
       <div class="c10-help">
         <div class="c10-help-title">${ic('info', 15)} Come si compila questo capitolo</div>
-        <p class="c10-help-text">Qui valuti l'esposizione al rumore dei lavoratori. Segui i 3 passaggi qui sotto, in ordine:</p>
+        <p class="c10-help-text">I dati arrivano dalle misurazioni inserite in Presidia (sezione Rumore). Qui puoi controllarli e correggerli: i calcoli (LEX,8h, incertezza, verifica DPI, rischio) si aggiornano da soli per ogni gruppo omogeneo.</p>
         <ol class="c10-help-steps">
-          <li><b>Strumento</b> — scegli il fonometro usato per le misure.</li>
-          <li><b>Gruppi esposti</b> — per ogni gruppo di lavoratori indica le attrezzature rumorose e aggiungi le <b>postazioni di misura</b> con i valori del fonometro (LAeq, Lpicco) e i lavoratori esposti.</li>
-          <li><b>Prescrizioni</b> — spunta le misure di riduzione del rischio adottate.</li>
+          <li><b>Strumento</b> — fonometro usato per le misure.</li>
+          <li><b>Gruppi omogenei</b> — per ciascuno: attrezzature, tempi di esposizione e livelli misurati; sotto trovi i risultati finali.</li>
+          <li><b>Prescrizioni</b> — misure di riduzione del rischio.</li>
         </ol>
       </div>
 
       <div class="c10-section">
         <div class="c10-section-hdr"><span class="c10-step">1</span> Strumento di misura</div>
-        <div class="c10-section-desc">Seleziona il fonometro con cui sono state eseguite le misurazioni.</div>
         <div class="c10-row">
           <label class="c10-lbl">Fonometro utilizzato</label>
           <select class="c10-sel" onchange="App.onC10Fonometro('${fieldId}',this.value)">
@@ -6923,218 +7455,139 @@ const App = (() => {
             ${optsFon}
           </select>
         </div>
-        ${classeInfo}
       </div>
 
       <div class="c10-section">
         <div class="c10-section-hdr"><span class="c10-step">2</span> Gruppi omogenei esposti al rumore</div>
-        <div class="c10-section-desc">Un gruppo per ogni insieme di lavoratori con la stessa esposizione. Clicca su un gruppo per aprirlo e inserire attrezzature, postazioni di misura e lavoratori esposti.</div>
-        ${gruppiHtml || `<div class="c10-empty-hint">Nessun gruppo. Aggiungine uno per iniziare.</div>`}
+        <div class="c10-section-desc">Un blocco per ogni gruppo omogeneo: apri il gruppo per vedere o modificare dati e risultati.</div>
+        ${gruppiHtml || `<div class="c10-empty-hint">Nessun gruppo con misurazioni di rumore nel JSON. Aggiungine uno per iniziare.</div>`}
         <button class="c10-add-btn" onclick="App.onC10AddGruppo('${fieldId}')">${ic('plus', 13)} Aggiungi gruppo omogeneo</button>
       </div>
 
       <div class="c10-section">
         <div class="c10-section-hdr"><span class="c10-step">3</span> Prescrizioni e misure di riduzione</div>
-        <div class="c10-section-desc">Spunta le misure di prevenzione e protezione adottate per ridurre il rischio rumore.</div>
-        <div class="c10-prescrizioni">
-          ${prescHtml}
-        </div>
+        <div class="c10-prescrizioni">${prescHtml}</div>
       </div>
     </div>`;
   }
 
-  function _c10GruppoHtml(fieldId, gi, g, attDisp) {
-    // Elenca le attrezzature DEL gruppo (non quelle di tutti i gruppi): fix
-    // associazione attrezzature↔gruppo (feedback 2026-10-15). Fallback alla
-    // lista globale solo se il gruppo non porta la propria.
-    const attList = (Array.isArray(g.attrezzature) && g.attrezzature.length)
-      ? g.attrezzature : attDisp;
-    const attChecks = attList.map(a => {
-      const sel = g.attrezzature_selezionate && g.attrezzature_selezionate.includes(a);
-      return `<label class="c10-att-row">
-        <input type="checkbox" ${sel ? 'checked' : ''}
-          onchange="App.onC10AttSel('${fieldId}',${gi},'${escHtml(a).replace(/'/g,"\\'")}',this.checked)">
-        <span>${escHtml(a)}</span>
-      </label>`;
+  function _c10GruppoHtml(fieldId, gi, g) {
+    const righe = (g.misure || []).map((m, mi) => {
+      const inp = (key, ph, step) => `<input class="c10-meas" type="number" step="${step}" value="${m[key] === undefined || m[key] === null ? '' : m[key]}"
+        onchange="App.onC10Misura('${fieldId}',${gi},${mi},'${key}',this.value)" placeholder="${ph}">`;
+      return `<tr>
+        <td class="c10-td-center">${mi + 1}</td>
+        <td><input class="c10-inp" type="text" value="${escHtml(m.attrezzatura || '')}"
+          onchange="App.onC10Misura('${fieldId}',${gi},${mi},'attrezzatura',this.value)" placeholder="Attrezzatura / rumore di fondo"></td>
+        <td>${inp('tempo_min', 'min', 1)}</td>
+        <td>${inp('laeq', 'dBA', 0.1)}</td>
+        <td>${inp('lceq', 'dBC', 0.1)}</td>
+        <td>${inp('lpeak', 'dBC', 0.1)}</td>
+        <td><button class="c10-rm-inline" onclick="App.onC10RemoveMisura('${fieldId}',${gi},${mi})" title="Rimuovi">✕</button></td>
+      </tr>`;
     }).join('');
-
-    const postazioniHtml = (g.postazioni || []).map((p, pi) =>
-      _c10PostazioneHtml(fieldId, gi, pi, p)
-    ).join('');
 
     return `<div class="c10-gruppo" id="c10-g-${fieldId}-${gi}">
       <div class="c10-gruppo-hdr" onclick="App.toggleC10Gruppo('${fieldId}',${gi})">
         <span class="c10-gruppo-n">Gruppo omogeneo ${gi + 1}${g.nome ? ' — ' + escHtml(g.nome) : ''}</span>
-        <span class="c10-toggle-icon">${ic(gi === 0 ? 'chevron_up' : 'chevron_down', 13)}</span>
+        <span class="c10-classe" id="c10-badge-${fieldId}-${gi}" style="margin:0 8px;padding:2px 10px;display:none"></span>
+        <span class="c10-toggle-icon">${ic('chevron_down', 13)}</span>
         <button class="c10-rm-btn" onclick="event.stopPropagation();App.onC10RemoveGruppo('${fieldId}',${gi})" title="Rimuovi gruppo">✕</button>
       </div>
 
-      <div class="c10-gruppo-body${gi === 0 ? ' open' : ''}">
+      <div class="c10-gruppo-body">
       <div class="c10-grid2">
         <div class="c10-field-row">
           <label class="c10-lbl">Nome gruppo</label>
           <input class="c10-inp" type="text" value="${escHtml(g.nome || '')}"
-            onchange="App.onC10GruppoField('${fieldId}',${gi},'nome',this.value)"
-            placeholder="es. Operai produzione">
+            onchange="App.onC10GruppoField('${fieldId}',${gi},'nome',this.value)">
         </div>
         <div class="c10-field-row">
           <label class="c10-lbl">Ore lavoro / giorno</label>
           <input class="c10-num" type="number" step="0.5" min="1" max="12" value="${g.ore_lavoro_gg || 8}"
             onchange="App.onC10GruppoField('${fieldId}',${gi},'ore_lavoro_gg',parseFloat(this.value)||8)">
         </div>
-        <div class="c10-field-row">
-          <label class="c10-lbl">Rif. ambiente</label>
-          <input class="c10-inp-sm" type="text" value="${escHtml(g.rif_ambiente || '')}"
-            onchange="App.onC10GruppoField('${fieldId}',${gi},'rif_ambiente',this.value)">
-        </div>
-        <div class="c10-field-row">
-          <label class="c10-lbl">Rif. fase</label>
-          <input class="c10-inp-sm" type="text" value="${escHtml(g.rif_fase || '')}"
-            onchange="App.onC10GruppoField('${fieldId}',${gi},'rif_fase',this.value)">
-        </div>
       </div>
-
       <div class="c10-sn-row">
         <span class="c10-sn-lbl">Sostanze ototossiche</span>
         <button class="c10-sn-btn${g.sostanze_ototossiche ? ' c10-sn-active' : ''}"
           onclick="App.onC10GruppoField('${fieldId}',${gi},'sostanze_ototossiche',true)">Sì</button>
         <button class="c10-sn-btn${!g.sostanze_ototossiche ? ' c10-sn-active' : ''}"
           onclick="App.onC10GruppoField('${fieldId}',${gi},'sostanze_ototossiche',false)">No</button>
-      </div>
-      <div class="c10-sn-row">
-        <span class="c10-sn-lbl">Esposizione a vibrazioni</span>
+        <span class="c10-sn-lbl" style="margin-left:24px">Esposizione a vibrazioni</span>
         <button class="c10-sn-btn${g.vibrazioni ? ' c10-sn-active' : ''}"
           onclick="App.onC10GruppoField('${fieldId}',${gi},'vibrazioni',true)">Sì</button>
         <button class="c10-sn-btn${!g.vibrazioni ? ' c10-sn-active' : ''}"
           onclick="App.onC10GruppoField('${fieldId}',${gi},'vibrazioni',false)">No</button>
       </div>
-
       <div class="c10-field-row c10-full">
         <label class="c10-lbl">Descrizione attività</label>
         <textarea class="c10-textarea" rows="2"
           onchange="App.onC10GruppoField('${fieldId}',${gi},'descrizione_attivita',this.value)"
-          placeholder="Descrivere le attività lavorative svolte...">${escHtml(g.descrizione_attivita || '')}</textarea>
+          placeholder="Descrivere le attività lavorative che comportano esposizione al rumore...">${escHtml(g.descrizione_attivita || '')}</textarea>
       </div>
 
-      ${attList.length ? `<div class="c10-att-section">
-        <div class="c10-subsec-hdr">Attrezzature rumorose usate dal gruppo</div>
-        <div class="c10-subsec-desc">Spunta le attrezzature rumorose effettivamente utilizzate da questo gruppo.</div>
-        <div class="c10-att-grid">${attChecks}</div>
-      </div>` : ''}
+      <div class="c10-postazioni-section">
+        <div class="c10-subsec-hdr">Attrezzature e misurazioni</div>
+        <div class="c10-subsec-desc">Ogni riga è una attrezzatura (max 30): tempo di esposizione giornaliero e livelli misurati.</div>
+        <table class="c10-meas-table">
+          <thead><tr><th>#</th><th>Attrezzatura</th><th>Tempo (min)</th>
+            <th>L<sub>Aeq</sub> [dBA]</th><th>L<sub>Ceq</sub> [dBC]</th><th>L<sub>picco</sub> [dBC]</th><th></th></tr></thead>
+          <tbody>${righe || `<tr><td colspan="7" class="c10-empty-hint">Nessuna misurazione.</td></tr>`}</tbody>
+        </table>
+        <div class="c10-tot" id="c10-tot-${fieldId}-${gi}">${_c10TotHtml(g)}</div>
+        <button class="c10-add-sm-btn" onclick="App.onC10AddMisura('${fieldId}',${gi})">${ic('plus', 12)} Aggiungi attrezzatura</button>
+      </div>
 
       <div class="c10-postazioni-section">
-        <div class="c10-subsec-hdr">Postazioni di misura</div>
-        <div class="c10-subsec-desc">Ogni postazione è un punto/condizione in cui hai misurato il rumore: inserisci i valori letti dal fonometro e i lavoratori esposti.</div>
-        ${postazioniHtml || `<div class="c10-empty-hint">Nessuna postazione. Aggiungine una per inserire i valori fonometrici.</div>`}
-        <button class="c10-add-sm-btn" onclick="App.onC10AddPostazione('${fieldId}',${gi})">${ic('plus', 12)} Aggiungi postazione di misura</button>
+        <div class="c10-subsec-hdr">Risultati del gruppo</div>
+        <div id="c10-res-${fieldId}-${gi}"><div class="c10-empty-hint">Calcolo…</div></div>
       </div>
       </div>
     </div>`;
   }
 
-  function _c10PostazioneHtml(fieldId, gi, pi, p) {
-    const misure = p.misure || [{},{},{}];
-
-    const misureRows = [0, 1, 2].map(mi => {
-      const m = misure[mi] || {};
-      return `<tr>
-        <td class="c10-td-center">Misura ${mi + 1}</td>
-        <td><input class="c10-meas" type="number" step="0.1" value="${m.LAeq !== undefined && m.LAeq !== '' ? m.LAeq : ''}"
-          onchange="App.onC10Misura('${fieldId}',${gi},${pi},${mi},'LAeq',this.value)"
-          placeholder="—"></td>
-        <td><input class="c10-meas" type="number" step="0.1" value="${m.LCeq !== undefined && m.LCeq !== '' ? m.LCeq : ''}"
-          onchange="App.onC10Misura('${fieldId}',${gi},${pi},${mi},'LCeq',this.value)"
-          placeholder="—"></td>
-        <td><input class="c10-meas" type="number" step="0.1" value="${m.Lpicco !== undefined && m.Lpicco !== '' ? m.Lpicco : ''}"
-          onchange="App.onC10Misura('${fieldId}',${gi},${pi},${mi},'Lpicco',this.value)"
-          placeholder="—"></td>
-      </tr>`;
-    }).join('');
-
-    const laeqs  = misure.map(m => m.LAeq);
-    const lceqs  = misure.map(m => m.LCeq);
-    const lpicos = misure.map(m => m.Lpicco);
-    const laeq_m  = _c10EnergyAvg(laeqs);
-    const lceq_m  = _c10EnergyAvg(lceqs);
-    const lpico_m = Math.max(...lpicos.map(v => parseFloat(v)).filter(v => !isNaN(v) && v > 0), 0) || null;
-    const fmt = v => v !== null && !isNaN(v) && v > 0 ? v.toFixed(1) : '—';
-
-    const sorgenti = p.sorgenti_rumore || [{ nome: '', m1: '', m2: '', m3: '' }];
-    const sorgentiHtml = sorgenti.map((s, si) => `
-      <div class="c10-sorgente-row">
-        <input class="c10-inp" type="text" value="${escHtml(s.nome || '')}"
-          onchange="App.onC10Sorgente('${fieldId}',${gi},${pi},${si},'nome',this.value)"
-          placeholder="Nome sorgente (es. Fresatrice)">
-        <input class="c10-inp-sm" type="text" value="${escHtml(s.m1 || '')}"
-          onchange="App.onC10Sorgente('${fieldId}',${gi},${pi},${si},'m1',this.value)"
-          placeholder="Misura 1 — condiz.">
-        <input class="c10-inp-sm" type="text" value="${escHtml(s.m2 || '')}"
-          onchange="App.onC10Sorgente('${fieldId}',${gi},${pi},${si},'m2',this.value)"
-          placeholder="Misura 2 — condiz.">
-        <input class="c10-inp-sm" type="text" value="${escHtml(s.m3 || '')}"
-          onchange="App.onC10Sorgente('${fieldId}',${gi},${pi},${si},'m3',this.value)"
-          placeholder="Misura 3 — condiz.">
-        <button class="c10-rm-inline" onclick="App.onC10RemoveSorgente('${fieldId}',${gi},${pi},${si})" title="Rimuovi">✕</button>
-      </div>`).join('');
-
-    const lavRows = (p.lavoratori_esposti || []).map((lav, li) => `
-      <tr>
-        <td>${_groupSelectHtml(lav.gruppo,
-          `App.onC10Lavoratore('${fieldId}',${gi},${pi},${li},'gruppo',this.value)`,
-          'Gruppo esposto', 'c10-inp')}</td>
-        <td><input class="c10-meas" type="number" step="1" value="${lav.Tm_j || ''}"
-          onchange="App.onC10Lavoratore('${fieldId}',${gi},${pi},${li},'Tm_j',this.value)"
-          placeholder="min"></td>
-        <td><button class="c10-rm-inline" onclick="App.onC10RemoveLav('${fieldId}',${gi},${pi},${li})">✕</button></td>
-      </tr>`).join('');
-
-    return `<div class="c10-postazione" id="c10-p-${fieldId}-${gi}-${pi}">
-      <div class="c10-post-hdr">
-        <span>Postazione ${pi + 1}</span>
-        <button class="c10-rm-btn" onclick="App.onC10RemovePostazione('${fieldId}',${gi},${pi})">✕</button>
-      </div>
-
-      <div class="c10-field-row">
-        <label class="c10-lbl">Condizione di misura</label>
-        <input class="c10-inp c10-full-w" type="text" value="${escHtml(p.condizione_misura || '')}"
-          onchange="App.onC10PostazioneField('${fieldId}',${gi},${pi},'condizione_misura',this.value)"
-          placeholder="es. Normale operatività">
-      </div>
-
-      <div class="c10-subsec-hdr c10-mt">Sorgenti di rumore</div>
-      <div class="c10-subsec-desc">Le macchine/attività che generano rumore in questa postazione.</div>
-      ${sorgentiHtml}
-      <button class="c10-add-xs-btn" onclick="App.onC10AddSorgente('${fieldId}',${gi},${pi})">${ic('plus', 11)} Aggiungi sorgente</button>
-
-      <div class="c10-subsec-hdr c10-mt">Misure acustiche</div>
-      <div class="c10-subsec-desc">Inserisci i valori letti dal fonometro (fino a 3 rilievi). L<sub>Aeq</sub> = livello medio, L<sub>picco</sub> = picco massimo. La media è calcolata da sola.</div>
-      <table class="c10-meas-table">
-        <thead><tr>
-          <th></th><th>L<sub>Aeq,mi</sub> [dBA]</th>
-          <th>L<sub>Ceq,mi</sub> [dBC]</th>
-          <th>L<sub>picco,mi</sub> [dBC]</th>
-        </tr></thead>
-        <tbody>
-          ${misureRows}
-          <tr class="c10-avg-row">
-            <td class="c10-td-center c10-avg-lbl">Media (auto)</td>
-            <td class="c10-avg-val">${fmt(laeq_m)}</td>
-            <td class="c10-avg-val">${fmt(lceq_m)}</td>
-            <td class="c10-avg-val">${fmt(lpico_m)}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="c10-subsec-hdr c10-mt">Lavoratori esposti</div>
-      <div class="c10-subsec-desc">Chi lavora in questa postazione e per quanti minuti al giorno (T<sub>m,j</sub>).</div>
-      <table class="c10-lav-table">
-        <thead><tr><th>Gruppo omogeneo</th><th>Minuti/giorno (T<sub>m,j</sub>)</th><th></th></tr></thead>
-        <tbody>
-          ${lavRows || `<tr><td colspan="3" class="c10-empty-hint">Nessun lavoratore. Aggiungine uno.</td></tr>`}
-        </tbody>
-      </table>
-      <button class="c10-add-xs-btn" onclick="App.onC10AddLavoratore('${fieldId}',${gi},${pi})">${ic('plus', 11)} Aggiungi lavoratore esposto</button>
-    </div>`;
+  function _c10Calc(fieldId, gi) {
+    clearTimeout(_c10Timers[fieldId + gi]);
+    _c10Timers[fieldId + gi] = setTimeout(async () => {
+      const ed = state.formValues[fieldId]; const g = ed && ed.gruppi_omogenei[gi];
+      const box = document.getElementById(`c10-res-${fieldId}-${gi}`);
+      if (!g || !box) return;
+      const r = await call('cap10_calcola', g.misure || []);
+      const badge = document.getElementById(`c10-badge-${fieldId}-${gi}`);
+      if (!r || !r.ok || r.lex === null || r.lex === undefined) {
+        box.innerHTML = `<div class="c10-empty-hint">${r && r.error ? escHtml(r.error) : 'Inserisci almeno una misurazione per vedere i risultati.'}</div>`;
+        if (badge) badge.style.display = 'none';
+        return;
+      }
+      const liv = C10_LIVELLI.includes(g.rischio_manuale) ? g.rischio_manuale : r.rischio;
+      if (badge) { badge.style.display = ''; badge.textContent = 'Rischio ' + liv; }
+      const th = t => `<th style="background:var(--gray-50);padding:6px 8px;border:1px solid var(--gray-200);text-align:center">${t}</th>`;
+      const td = (t, b) => `<td style="padding:6px 8px;border:1px solid var(--gray-100);text-align:center;${b ? 'font-weight:700;color:var(--blue-800)' : ''}">${t}</td>`;
+      const dpiRows = (r.dpi || []).map(d => `<tr>${td(d.n)}${td(escHtml(d.attrezzatura))}${td(_c10f(d.laeq_m))}${td(d.lceq_m === null ? '' : _c10f(d.lceq_m))}${td(_c10f(d.laeq_dpi))}${td(d.stima)}</tr>`).join('');
+      const optsR = ['<option value="">Automatico (' + r.rischio + ')</option>']
+        .concat(C10_LIVELLI.map(l => `<option value="${l}"${g.rischio_manuale === l ? ' selected' : ''}>${l}</option>`)).join('');
+      const allerta = r.lex > 87
+        ? `<div style="background:#fdecea;border:1.5px solid #c0392b;color:#c0392b;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-weight:700;font-size:13px">⚠ ATTENZIONE: L<sub>EX,8h</sub> = ${_c10f(r.lex)} dBA — supera 87 dBA</div>` : '';
+      box.innerHTML = `
+        ${allerta}
+        ${r.troncato ? '<div class="c10-empty-hint">Attenzione: oltre 30 attrezzature, le ultime non sono calcolate.</div>' : ''}
+        ${r.insufficienti ? '<div class="c10-empty-hint">Attenzione: con il massimo SNR cercato restano righe «Insufficiente».</div>' : ''}
+        <div class="c10-subsec-desc">Riepilogo L<sub>EX,8h</sub> (foglio 3)</div>
+        <table class="c10-meas-table"><thead><tr>${th('L<sub>EX,8h</sub> [dBA]')}${th('U(L<sub>EX,8h</sub>) [dBA]')}${th("L'<sub>EX,8h</sub> [dBA]")}${th('P<sub>peak</sub> max [dBC]')}</tr></thead>
+          <tbody><tr>${td(_c10f(r.lex))}${td(_c10f(r.U))}${td(_c10f(r.lex_p), 1)}${td(_c10f(r.ppeak), 1)}</tr></tbody></table>
+        <div class="c10-subsec-desc c10-mt">Verifica DPI — metodo SNR = <b>${r.snr}</b> dB (foglio 4)</div>
+        <table class="c10-meas-table"><thead><tr>${th('#')}${th('Attrezzatura')}${th('L<sub>Aeq,m</sub>')}${th('L<sub>Ceq,m</sub>')}${th("L'<sub>Aeq,m</sub>")}${th('Stima protezione')}</tr></thead>
+          <tbody>${dpiRows}</tbody></table>
+        <div class="c10-subsec-desc c10-mt">Riepilogo con DPI (foglio 5)</div>
+        <table class="c10-meas-table"><thead><tr>${th('L<sub>EX,8h</sub> [dBA]')}${th("L'<sub>EX,8h</sub> SNR [dBA]")}${th('U(L<sub>EX,8h</sub>) [dBA]')}${th("L'<sub>EX,8hmax</sub> SNR [dBA]")}${th('P<sub>peak</sub> max [dBC]')}</tr></thead>
+          <tbody><tr>${td(_c10f(r.lex))}${td(_c10f(r.lex_snr))}${td(_c10f(r.U))}${td(_c10f(r.lex_snr_max), 1)}${td(_c10f(r.ppeak))}</tr></tbody></table>
+        <div class="c10-row c10-mt">
+          <label class="c10-lbl">Rischio residuo (§6.2)</label>
+          <select class="c10-sel" onchange="App.onC10Rischio('${fieldId}',${gi},this.value)">${optsR}</select>
+          <span class="c10-classe" style="margin:0">${liv}</span>
+        </div>`;
+    }, 250);
   }
 
   /* ── Event handlers cap10 ────────────────────────────────────────────── */
@@ -7149,120 +7602,55 @@ const App = (() => {
     const ed = state.formValues[fieldId]; if (!ed) return;
     const g = ed.gruppi_omogenei[gi]; if (!g) return;
     g[key] = value;
-    const rebuild = (key === 'sostanze_ototossiche' || key === 'vibrazioni');
-    if (rebuild) _c10Rebuild(fieldId, gi); else saveChapterDraft();
-  }
-
-  function onC10AttSel(fieldId, gi, nome, checked) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!Array.isArray(g.attrezzature_selezionate)) g.attrezzature_selezionate = [];
-    if (checked) { if (!g.attrezzature_selezionate.includes(nome)) g.attrezzature_selezionate.push(nome); }
-    else g.attrezzature_selezionate = g.attrezzature_selezionate.filter(a => a !== nome);
-    saveChapterDraft();
+    if (key === 'sostanze_ototossiche' || key === 'vibrazioni' || key === 'nome') _c10Rebuild(fieldId, gi);
+    else saveChapterDraft();
   }
 
   function onC10AddGruppo(fieldId) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    const id = (ed.gruppi_omogenei.length || 0) + 1;
-    ed.gruppi_omogenei.push(_c10DefaultGruppo(id, '', ed.attrezzature_disponibili || []));
+    ed.gruppi_omogenei.push(_c10DefaultGruppo(ed.gruppi_omogenei.length + 1, ''));
     _c10Rebuild(fieldId, ed.gruppi_omogenei.length - 1);
   }
 
   function onC10RemoveGruppo(fieldId, gi) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    if (ed.gruppi_omogenei.length <= 1) return;
     ed.gruppi_omogenei.splice(gi, 1);
     ed.gruppi_omogenei.forEach((g, i) => { g.id = i + 1; });
     _c10Rebuild(fieldId);
   }
 
-  function onC10AddPostazione(fieldId, gi) {
+  function onC10AddMisura(fieldId, gi) {
     const ed = state.formValues[fieldId]; if (!ed) return;
     const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!Array.isArray(g.postazioni)) g.postazioni = [];
-    g.postazioni.push(_c10DefaultPostazione(g.postazioni.length + 1));
+    if (!Array.isArray(g.misure)) g.misure = [];
+    g.misure.push(_c10DefaultMisura());
     _c10Rebuild(fieldId, gi);
   }
 
-  function onC10RemovePostazione(fieldId, gi, pi) {
+  function onC10RemoveMisura(fieldId, gi, mi) {
     const ed = state.formValues[fieldId]; if (!ed) return;
     const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    g.postazioni.splice(pi, 1);
-    g.postazioni.forEach((p, i) => { p.numero = i + 1; });
+    g.misure.splice(mi, 1);
     _c10Rebuild(fieldId, gi);
   }
 
-  function onC10PostazioneField(fieldId, gi, pi, key, value) {
+  function onC10Misura(fieldId, gi, mi, key, value) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = (ed.gruppi_omogenei[gi] || {}).postazioni && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    p[key] = value;
+    const m = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].misure[mi];
+    if (!m) return;
+    m[key] = key === 'attrezzatura' ? value : (value === '' ? '' : parseFloat(value));
+    if (typeof m[key] === 'number' && isNaN(m[key])) m[key] = '';
     saveChapterDraft();
+    _c10UpdTot(fieldId, gi);
+    _c10Calc(fieldId, gi);
   }
 
-  function onC10Misura(fieldId, gi, pi, mi, key, value) {
+  function onC10Rischio(fieldId, gi, val) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    if (!Array.isArray(p.misure)) p.misure = [{},{},{}];
-    if (!p.misure[mi]) p.misure[mi] = {};
-    p.misure[mi][key] = value === '' ? '' : parseFloat(value) || '';
-    _c10Rebuild(fieldId, gi);
-  }
-
-  function onC10Sorgente(fieldId, gi, pi, si, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    if (!Array.isArray(p.sorgenti_rumore)) p.sorgenti_rumore = [];
-    if (!p.sorgenti_rumore[si]) p.sorgenti_rumore[si] = {};
-    p.sorgenti_rumore[si][key] = value;
+    const g = ed.gruppi_omogenei[gi]; if (!g) return;
+    g.rischio_manuale = val || '';
     saveChapterDraft();
-  }
-
-  function onC10AddSorgente(fieldId, gi, pi) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    if (!Array.isArray(p.sorgenti_rumore)) p.sorgenti_rumore = [];
-    p.sorgenti_rumore.push({ nome: '', m1: '', m2: '', m3: '' });
-    _c10Rebuild(fieldId, gi);
-  }
-
-  function onC10RemoveSorgente(fieldId, gi, pi, si) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p || !p.sorgenti_rumore || p.sorgenti_rumore.length <= 1) return;
-    p.sorgenti_rumore.splice(si, 1);
-    _c10Rebuild(fieldId, gi);
-  }
-
-  function onC10Lavoratore(fieldId, gi, pi, li, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    if (!Array.isArray(p.lavoratori_esposti)) p.lavoratori_esposti = [];
-    if (!p.lavoratori_esposti[li]) p.lavoratori_esposti[li] = {};
-    p.lavoratori_esposti[li][key] = key === 'Tm_j' ? (parseFloat(value) || 0) : value;
-    saveChapterDraft();
-  }
-
-  function onC10AddLavoratore(fieldId, gi, pi) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p) return;
-    if (!Array.isArray(p.lavoratori_esposti)) p.lavoratori_esposti = [];
-    p.lavoratori_esposti.push({ gruppo: '', Tm_j: 480 });
-    _c10Rebuild(fieldId, gi);
-  }
-
-  function onC10RemoveLav(fieldId, gi, pi, li) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const p = ed.gruppi_omogenei[gi] && ed.gruppi_omogenei[gi].postazioni[pi];
-    if (!p || !p.lavoratori_esposti || p.lavoratori_esposti.length <= 1) return;
-    p.lavoratori_esposti.splice(li, 1);
-    _c10Rebuild(fieldId, gi);
+    _c10Calc(fieldId, gi);
   }
 
   function onC10Prescrizione(fieldId, key, checked) {
@@ -7273,13 +7661,6 @@ const App = (() => {
   }
 
   function toggleC10Gruppo(fieldId, gi) {
-    document.querySelectorAll(`#c10-editor-${fieldId} .c10-gruppo`).forEach((g, idx) => {
-      if (idx !== gi) {
-        g.querySelector('.c10-gruppo-body')?.classList.remove('open');
-        const icon = g.querySelector('.c10-toggle-icon');
-        if (icon) icon.innerHTML = ic('chevron_down', 13);
-      }
-    });
     const body = document.querySelector(`#c10-g-${fieldId}-${gi} .c10-gruppo-body`);
     if (!body) return;
     const isOpen = body.classList.toggle('open');
@@ -7679,7 +8060,8 @@ const App = (() => {
     }
     box.innerHTML = head
       + schede.map((s, i) => _cap6bSchedaHtml(s, i)).join('')
-      + _cap6bAddHtml(fieldId);
+      + _cap6bAddHtml(fieldId)
+      + `<div style="margin:6px 0"><button type="button" class="btn btn-ghost btn-sm" onclick="App.cap6bRipristina('${fieldId}')">↺ Ripristina le schede originali</button></div>`;
     schede.forEach((s, i) => _cap6bUpdateRes(i));
   }
 
@@ -7731,7 +8113,7 @@ const App = (() => {
   }
   async function cap6bRimuovi(fieldId, sid) {
     const jp = state.currentClient?.json_path;
-    if (!jp || !confirm('Rimuovere questa valutazione aggiunta a mano?')) return;
+    if (!jp || !confirm('Eliminare questa scheda? (si può ripristinare con «Ripristina schede originali»)')) return;
     const r = await call('rimuovi_cap6b_valutazione', jp, sid).catch(() => null);
     if (r && r.ok) _loadCap6bNative(fieldId);
   }
@@ -7761,8 +8143,8 @@ const App = (() => {
       <header class="c6n-group-hdr">
         <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
         <span class="c6n-group-nome">${escHtml(s.gruppo_nome ? `Gruppo ${s.gruppo_label} — ${s.gruppo_nome}` : (s.gruppo_label ? `Gruppo ${s.gruppo_label}` : 'Gruppo omogeneo'))}</span>
-        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>
-          <button type="button" class="c6n-group-tpl" onclick="App.cap6bRimuovi('${escAttr(_cap6bFieldId())}','${escAttr(s.id)}')">Rimuovi</button>` : ''}
+        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>` : ''}
+        <button type="button" class="c6n-group-tpl" onclick="App.cap6bRimuovi('${escAttr(_cap6bFieldId())}','${escAttr(s.id)}')">Elimina scheda</button>
       </header>
       <div class="c6n-group-body">
         <div class="c6n-grid">
@@ -7900,6 +8282,7 @@ const App = (() => {
     box.innerHTML = head
       + schede.map((s, i) => _cap7SchedaHtml(s, i)).join('')
       + _cap7AddHtml(fieldId)
+      + `<div style="margin:6px 0"><button type="button" class="btn btn-ghost btn-sm" onclick="App.cap7Ripristina('${fieldId}')">↺ Ripristina le schede originali</button></div>`
       + (schede.length ? `<div class="c6n-misure-bar"><button type="button" class="btn btn-primary c6n-misure-btn" onclick="App.saveCap7Schede('${fieldId}')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           Salva schede OCRA</button></div>` : '');
@@ -7954,9 +8337,22 @@ const App = (() => {
     if (r && r.ok) { toast('Scheda aggiunta: compila i valori OCRA', 'success'); _loadCap7Native(fieldId); }
     else toast((r && r.error) || 'Errore', 'error');
   }
+  async function cap7Ripristina(fieldId) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !confirm('Ripristinare le schede originali eliminate?')) return;
+    const r = await call('ripristina_cap7_valutazioni', jp).catch(() => null);
+    if (r && r.ok) _loadCap7Native(fieldId);
+  }
+  async function cap6bRipristina(fieldId) {
+    const jp = state.currentClient?.json_path;
+    if (!jp || !confirm('Ripristinare le schede originali eliminate?')) return;
+    const r = await call('ripristina_cap6b_valutazioni', jp).catch(() => null);
+    if (r && r.ok) _loadCap6bNative(fieldId);
+  }
+
   async function cap7Rimuovi(fieldId, sid) {
     const jp = state.currentClient?.json_path;
-    if (!jp || !confirm('Rimuovere questa valutazione aggiunta a mano?')) return;
+    if (!jp || !confirm('Eliminare questa scheda? (si può ripristinare con «Ripristina schede originali»)')) return;
     const r = await call('rimuovi_cap7_valutazione', jp, sid).catch(() => null);
     if (r && r.ok) _loadCap7Native(fieldId);
   }
@@ -7974,8 +8370,8 @@ const App = (() => {
         <span class="c6n-group-tag">Scheda ${s.num || (i + 1)}</span>
         <span class="c6n-group-nome">${escHtml(s.gruppo_nome ? `Gruppo ${s.gruppo_label} — ${s.gruppo_nome}` : (s.gruppo_label ? `Gruppo ${s.gruppo_label}` : 'Gruppo omogeneo'))}</span>
         <span class="c6n-group-badge">${escHtml(s.fase || '—')}</span>
-        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>
-          <button type="button" class="c6n-group-tpl" onclick="App.cap7Rimuovi('${escAttr(_cap7FieldId())}','${escAttr(s.id)}')">Rimuovi</button>` : ''}
+        ${s.manuale ? `<span class="c6n-man-badge">Aggiunta dal back office</span>` : ''}
+        <button type="button" class="c6n-group-tpl" onclick="App.cap7Rimuovi('${escAttr(_cap7FieldId())}','${escAttr(s.id)}')">Elimina scheda</button>
       </header>
       <div class="c6n-group-body">
         ${q ? `<div class="c6n-m"><b>Valutazione tecnico:</b> ${escHtml(q)}</div>` : ''}
@@ -8405,422 +8801,302 @@ const App = (() => {
     saveChapterDraft();
   }
 
-  /* ── Cap11 — Vibrazioni ─────────────────────────────────────────────── */
-  const C11_PRESCRIZIONI_HAV = [
-    ['scelta_attrezzature',    'Scelta di attrezzature adeguate tenendo conto dell\'emissione di vibrazioni'],
-    ['manutenzione',           'Manutenzione regolare delle attrezzature di lavoro'],
-    ['informazione_formazione','Informazione e formazione dei lavoratori sull\'uso corretto delle attrezzature'],
-    ['guanti_antivibrazione',  'Utilizzo di guanti antivibrazioni (DPI)'],
+  /* ── Cap11 — Vibrazioni (v2 2026-11-23: calcoli dei fogli Excel replicati, Excel non si apre) ── */
+  const C11_PRESC_HAV = [
+    ['scelta_attrezzature',    'Scelta di attrezzature concepite nel rispetto dei principi ergonomici (minor livello di vibrazioni)'],
+    ['manutenzione',           'Programmi di manutenzione delle attrezzature di lavoro'],
+    ['informazione_formazione','Adeguata informazione e formazione dei lavoratori'],
+    ['guanti_antivibrazione',  'Fornitura di guanti anti-vibrazione (EN ISO 10819)'],
   ];
-
-  const C11_PRESCRIZIONI_WBV = [
-    ['scelta_attrezzature',    'Scelta di attrezzature adeguate tenendo conto dell\'emissione di vibrazioni'],
-    ['supporti_elastici',      'Utilizzo di sedili ammortizzati o supporti elastici che attenuino le vibrazioni'],
-    ['manutenzione',           'Manutenzione regolare delle attrezzature di lavoro'],
-    ['informazione_formazione','Informazione e formazione dei lavoratori sull\'uso corretto delle attrezzature'],
+  const C11_PRESC_WBV = [
+    ['scelta_attrezzature',    'Scelta di attrezzature concepite nel rispetto dei principi ergonomici (minor livello di vibrazioni)'],
+    ['supporti_elastici',      'Installazione di idonei supporti elastici sui sedili (indicare le attrezzature)'],
+    ['manutenzione',           'Programmi di manutenzione delle attrezzature di lavoro'],
+    ['informazione_formazione','Adeguata informazione e formazione dei lavoratori'],
   ];
-
   const C11_PRESCRIZIONI_GEN = [
-    ['altri_metodi_lavoro',          'Adottare altri metodi di lavoro che comportino una minore esposizione alle vibrazioni meccaniche'],
-    ['scelta_attrezzature_adeguate', 'Scegliere attrezzature adeguate, ergonomicamente concepite, che producano il minore livello di vibrazioni possibile'],
-    ['fornitura_accessori',          'Fornitura di accessori che riducano il rischio di lesioni provocate dalle vibrazioni (es. sedili, maniglie)'],
-    ['manutenzione_adeguata',        'Adeguata manutenzione delle attrezzature di lavoro, del posto di lavoro e dei sistemi sul posto di lavoro'],
-    ['progettazione_luoghi',         'Progettazione e layout dei luoghi e dei posti di lavoro al fine di ridurre l\'esposizione'],
-    ['informazione_formazione',      'Adeguata informazione e formazione dei lavoratori sull\'uso corretto e sicuro delle attrezzature'],
-    ['limitazione_durata',           'Limitazione della durata e dell\'intensità dell\'esposizione alle vibrazioni'],
-    ['orari_adeguati',               'Orari di lavoro adeguati, con adeguati periodi di riposo'],
-    ['indumenti_protezione',         'Fornitura ai lavoratori di indumenti per la protezione dal freddo e dall\'umidità'],
+    ['altri_metodi_lavoro',          'Altri metodi di lavoro che richiedano una minore esposizione a vibrazioni meccaniche'],
+    ['scelta_attrezzature_adeguate', 'Scelta di attrezzature adeguate concepite nel rispetto dei principi ergonomici'],
+    ['fornitura_accessori',          'Fornitura di attrezzature accessorie per ridurre i rischi di lesioni provocate da vibrazioni'],
+    ['manutenzione_adeguata',        'Adeguati programmi di manutenzione delle attrezzature, del luogo di lavoro e dei sistemi'],
+    ['progettazione_luoghi',         'Progettazione e assetto dei luoghi e dei posti di lavoro'],
+    ['informazione_formazione',      'Adeguata informazione e formazione dei lavoratori'],
+    ['limitazione_durata',           'Limitazione della durata e dell\'intensità dell\'esposizione'],
+    ['orari_adeguati',               'Orari di lavoro adeguati con appropriati periodi di riposo'],
+    ['indumenti_protezione',         'Fornitura di indumenti di protezione dal freddo e dall\'umidità'],
   ];
 
-  function _c11DefaultGruppo(id) {
+  function _c11DefaultGruppo(id, nome) {
     return {
-      id, nome: `Gruppo ${id}`,
-      hav: { presente: false, attrezzature: [] },
-      wbv: { presente: false, attrezzature: [] },
-      prescrizioni_hav: { scelta_attrezzature: false, manutenzione: false, informazione_formazione: false, guanti_antivibrazione: false, altri_dpi: '' },
-      prescrizioni_wbv: { scelta_attrezzature: false, supporti_elastici: false, manutenzione: false, informazione_formazione: false, altri_dpi: '' },
+      id, nome: nome || `Gruppo ${id}`, descrizione_attivita: '', ore_lavoro_gg: 8, rif_fase: '',
+      hav: false, wbv: false, hav_att: [], wbv_att: [],
+      presc_hav: { scelta_attrezzature: false, manutenzione: false, informazione_formazione: false, guanti_antivibrazione: false, altri_dpi: '' },
+      presc_wbv: { scelta_attrezzature: false, supporti_elastici: false, supporti_attrezzature: '', manutenzione: false, informazione_formazione: false },
+      rischio_hav: '', rischio_wbv: '',
     };
   }
-
-  function _c11DefaultHavAtt() {
-    return { tipo: '', marca_modello: '', modalita: '', avi: '', arto_dx: true, arto_sx: true, fattore_correttivo: 1.0, tempo_min: '' };
-  }
-
-  function _c11DefaultWbvAtt() {
-    return { tipo: '', marca_modello: '', modalita: '', awmaxi: '', tempo_min: '' };
-  }
+  const _c11AttVuota = () => ({ tipo: '', marca_modello: '', modalita: '', awx: '', awy: '', awz: '', tempo_min: '', arto_dx: 1, arto_sx: 1, fattore: 1 });
 
   function initCap11Editor(fieldId, data) {
-    const gruppi = Array.isArray(data && data.gruppi_omogenei) ? data.gruppi_omogenei : [];
+    const d = data || {};
     const genDefaults = {};
     C11_PRESCRIZIONI_GEN.forEach(([k]) => { genDefaults[k] = false; });
+    const gr = (d.versione === 2 && Array.isArray(d.gruppi)) ? d.gruppi : [];
     state.formValues[fieldId] = {
-      gruppi_omogenei: gruppi.length ? gruppi : [_c11DefaultGruppo(1)],
-      prescrizioni_generali: Object.assign({}, genDefaults, (data && data.prescrizioni_generali) || {}),
+      versione: 2,
+      accelerometro: String(d.accelerometro || '9') === '11' ? '11' : '9',
+      gruppi: gr.length ? gr : [_c11DefaultGruppo(1)],
+      prescrizioni_generali: Object.assign({}, genDefaults, d.prescrizioni_generali || {}),
     };
   }
 
   function _c11Rebuild(fieldId) {
     const outer = document.querySelector(`[data-field-id="${fieldId}"]`);
     if (outer) outer.innerHTML = buildCap11Editor(fieldId, state.formValues[fieldId]);
+    _c11InitRisultati(fieldId);
     saveChapterDraft();
   }
 
-  function _c11HavA8(atts) {
-    let sumSq = 0;
-    for (const a of (atts || [])) {
-      const avi = parseFloat(a.avi) || 0;
-      const tOre = (parseFloat(a.tempo_min) || 0) / 60;
-      sumSq += avi * avi * tOre;
-    }
-    return sumSq > 0 ? Math.sqrt(sumSq / 8) : 0;
+  // ---- calcoli (identici a core/cap11_calc.py e ai fogli Excel) ----
+  const _n = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(x) ? 0 : x; };
+  const _fm = (v, d = 2) => (Number(v) || 0).toFixed(d).replace('.', ',');
+  function _c11Hav(atts) {
+    let somma = 0;
+    const righe = (atts || []).map(a => {
+      const avi = Math.sqrt(_n(a.awx) ** 2 + _n(a.awy) ** 2 + _n(a.awz) ** 2);
+      const te = _n(a.tempo_min) / 60;
+      const g = (a.fattore === '' || a.fattore == null) ? 1 : _n(a.fattore);
+      somma += avi * avi * te;
+      return { avi, te, a8i: Math.sqrt(te / 8) * avi * g };
+    });
+    const a8 = Math.sqrt(somma / 8);
+    return { righe, a8, fascia: a8 > 5 ? 'alto' : (a8 >= 2.5 ? 'medio' : 'basso') };
   }
-
-  function _c11WbvA8(atts) {
-    let sumSq = 0;
-    for (const a of (atts || [])) {
-      const awmax = parseFloat(a.awmaxi) || 0;
-      const tOre = (parseFloat(a.tempo_min) || 0) / 60;
-      sumSq += awmax * awmax * tOre;
-    }
-    return sumSq > 0 ? Math.sqrt(sumSq / 8) : 0;
+  function _c11Wbv(atts) {
+    let somma = 0;
+    const righe = (atts || []).map(a => {
+      const aw = Math.max(1.4 * _n(a.awx), 1.4 * _n(a.awy), _n(a.awz));
+      const te = _n(a.tempo_min) / 60;
+      somma += aw * aw * te;
+      return { aw, te, a8i: Math.sqrt(te / 8) * aw };
+    });
+    const a8 = Math.sqrt(somma / 8);
+    return { righe, a8, fascia: a8 > 1 ? 'alto' : (a8 >= 0.5 ? 'medio' : 'basso') };
   }
-
-  function _c11FasciaHtml(A8, type) {
-    const basso = type === 'hav' ? 2.5 : 0.5;
-    const limite = type === 'hav' ? 5.0 : 1.0;
-    let cls, lbl;
-    if (A8 >= limite) { cls = 'c11-alto'; lbl = 'ELEVATO'; }
-    else if (A8 >= basso) { cls = 'c11-medio'; lbl = 'MEDIO'; }
-    else { cls = 'c11-basso'; lbl = 'BASSO'; }
-    return `<span class="c11-fascia ${cls}">${lbl}</span>`;
+  const _C11_LBL = { basso: 'BASSO', medio: 'MEDIO', alto: 'ALTO (inaccettabile)' };
+  function _c11Badge(r, ov, kind) {
+    const f = ['basso', 'medio', 'alto'].includes(ov) ? ov : r.fascia;
+    const col = f === 'alto' ? '#b91c1c' : (f === 'medio' ? '#b45309' : '#15803d');
+    const sorv = kind === 'hav' ? r.a8 >= 2.5 : r.a8 >= 0.5;
+    return `<span style="font-weight:800;color:${col}">Rischio ${_C11_LBL[f]}</span>
+      <span style="color:var(--gray-500);margin-left:10px">Sorveglianza sanitaria: <b>${sorv ? 'prevista' : 'non prevista'}</b></span>`;
   }
 
   function buildCap11Editor(fieldId, data) {
     const ed = state.formValues[fieldId] || {};
-    const gruppi = ed.gruppi_omogenei || [];
     const presGen = ed.prescrizioni_generali || {};
-
-    const gruppiHtml = gruppi.map((g, gi) => _c11GruppoHtml(fieldId, gi, g)).join('');
-
     const presGenHtml = C11_PRESCRIZIONI_GEN.map(([key, label]) => `
       <label class="c11-presc-row">
         <input type="checkbox" class="c11-presc-cb" ${presGen[key] ? 'checked' : ''}
           onchange="App.onC11PrescrizioneGen('${fieldId}','${key}',this.checked)">
         <span>${escHtml(label)}</span>
       </label>`).join('');
-
     return `<div class="c11-editor" id="c11-editor-${fieldId}">
+      <div class="c11-section">
+        <div class="c11-section-hdr">Strumentazione — accelerometro usato in sede di sopralluogo</div>
+        <div style="padding:14px 18px;display:flex;gap:18px;flex-wrap:wrap">
+          <label class="c11-presc-row"><input type="radio" name="c11-acc-${fieldId}" ${ed.accelerometro !== '11' ? 'checked' : ''}
+            onchange="App.onC11Acc('${fieldId}','9')"><span>Accelerometro n. 9 (MARCHE)</span></label>
+          <label class="c11-presc-row"><input type="radio" name="c11-acc-${fieldId}" ${ed.accelerometro === '11' ? 'checked' : ''}
+            onchange="App.onC11Acc('${fieldId}','11')"><span>Accelerometro n. 11 (LIGURIA)</span></label>
+        </div>
+      </div>
       <div class="c11-section">
         <div class="c11-section-hdr">Gruppi omogenei esposti a vibrazioni</div>
         <div style="padding:14px 18px">
-          ${gruppiHtml}
+          ${(ed.gruppi || []).map((g, gi) => _c11GruppoHtml(fieldId, gi, g)).join('')}
           <button class="c11-add-btn" onclick="App.onC11AddGruppo('${fieldId}')">+ Aggiungi gruppo omogeneo</button>
         </div>
       </div>
-
       <div class="c11-section">
-        <div class="c11-section-hdr">Misure di prevenzione e protezione generali (art. 203 D.Lgs 81/08)</div>
-        <div style="padding:14px 18px">
-          <div class="c11-prescrizioni">${presGenHtml}</div>
-        </div>
+        <div class="c11-section-hdr">Misure di prevenzione e protezione generali</div>
+        <div style="padding:14px 18px"><div class="c11-prescrizioni">${presGenHtml}</div></div>
       </div>
     </div>`;
   }
 
   function _c11GruppoHtml(fieldId, gi, g) {
-    const havHtml = g.hav && g.hav.presente ? _c11HavHtml(fieldId, gi, g) : '';
-    const wbvHtml = g.wbv && g.wbv.presente ? _c11WbvHtml(fieldId, gi, g) : '';
-
-    return `<div class="c11-gruppo" id="c11-g-${fieldId}-${gi}">
+    const fid = escHtml(fieldId);
+    return `<div class="c11-gruppo" id="c11-g-${fid}-${gi}">
       <div class="c11-gruppo-hdr">
         <span class="c11-gruppo-n">Gruppo omogeneo ${gi + 1}${g.nome ? ' — ' + escHtml(g.nome) : ''}</span>
         <button class="c11-rm-btn" onclick="App.onC11RemoveGruppo('${fieldId}',${gi})" title="Rimuovi gruppo">✕</button>
       </div>
       <div class="c11-gruppo-body">
-        <div class="c11-field-row">
-          <label class="c11-lbl">Nome gruppo</label>
-          <input class="c11-inp" type="text" value="${escHtml(g.nome || '')}"
-            onchange="App.onC11GruppoField('${fieldId}',${gi},'nome',this.value)"
-            placeholder="es. Operatori carpenteria">
-        </div>
+        <div class="c11-field-row"><label class="c11-lbl">Nome gruppo</label>
+          <input class="c11-inp" type="text" value="${escHtml(g.nome || '')}" onchange="App.onC11GruppoField('${fieldId}',${gi},'nome',this.value)"></div>
+        <div class="c11-field-row" style="align-items:flex-start"><label class="c11-lbl">Descrizione delle attività che comportano l'esposizione a vibrazioni</label>
+          <textarea class="c11-inp" rows="3" onchange="App.onC11GruppoField('${fieldId}',${gi},'descrizione_attivita',this.value)">${escHtml(g.descrizione_attivita || '')}</textarea></div>
+        <div class="c11-field-row"><label class="c11-lbl">Ore lavoro/gg</label>
+          <input class="c11-inp" style="max-width:90px" type="number" min="0" step="0.5" value="${escHtml(String(g.ore_lavoro_gg ?? 8))}" onchange="App.onC11GruppoField('${fieldId}',${gi},'ore_lavoro_gg',this.value)">
+          <label class="c11-lbl" style="min-width:auto;margin-left:16px">Rif. fase (cap. 2)</label>
+          <input class="c11-inp" style="max-width:140px" type="text" value="${escHtml(g.rif_fase || '')}" onchange="App.onC11GruppoField('${fieldId}',${gi},'rif_fase',this.value)"></div>
         <div class="c11-toggle-row">
           <span class="c11-toggle-lbl">Vibrazioni mano-braccio (HAV)</span>
-          <label class="c11-toggle">
-            <input type="checkbox" ${g.hav && g.hav.presente ? 'checked' : ''}
-              onchange="App.onC11HavToggle('${fieldId}',${gi},this.checked)">
-            <span class="c11-toggle-slider"></span>
-          </label>
+          <label class="c11-toggle"><input type="checkbox" ${g.hav ? 'checked' : ''} onchange="App.onC11Toggle('${fieldId}',${gi},'hav',this.checked)"><span class="c11-toggle-slider"></span></label>
           <span class="c11-toggle-lbl" style="margin-left:12px">Vibrazioni al corpo intero (WBV)</span>
-          <label class="c11-toggle">
-            <input type="checkbox" ${g.wbv && g.wbv.presente ? 'checked' : ''}
-              onchange="App.onC11WbvToggle('${fieldId}',${gi},this.checked)">
-            <span class="c11-toggle-slider"></span>
-          </label>
+          <label class="c11-toggle"><input type="checkbox" ${g.wbv ? 'checked' : ''} onchange="App.onC11Toggle('${fieldId}',${gi},'wbv',this.checked)"><span class="c11-toggle-slider"></span></label>
         </div>
-        ${havHtml}
-        ${wbvHtml}
+        ${g.hav ? _c11BloccoHtml(fieldId, gi, g, 'hav') : ''}
+        ${g.wbv ? _c11BloccoHtml(fieldId, gi, g, 'wbv') : ''}
       </div>
     </div>`;
   }
 
-  function _c11HavHtml(fieldId, gi, g) {
-    const atts = (g.hav && g.hav.attrezzature) || [];
-    const preHav = g.prescrizioni_hav || {};
-
-    const attRows = atts.map((a, ai) => {
-      const tOre = (parseFloat(a.tempo_min) || 0) / 60;
-      const avi = parseFloat(a.avi) || 0;
-      const gfc = parseFloat(a.fattore_correttivo) || 1.0;
-      const a8i = (tOre > 0 && avi > 0) ? (avi * Math.sqrt(tOre / 8) * gfc).toFixed(3) : '—';
-      return `<tr>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.tipo || '')}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'tipo',this.value)" placeholder="Attrezzatura"></td>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.marca_modello || '')}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'marca_modello',this.value)" placeholder="—"></td>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.modalita || '')}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'modalita',this.value)" placeholder="—"></td>
-        <td><input class="c11-meas-n" type="number" step="0.01" value="${a.avi !== '' && a.avi !== undefined ? a.avi : ''}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'avi',this.value)" placeholder="—"></td>
-        <td style="text-align:center"><input type="checkbox" ${a.arto_dx ? 'checked' : ''}
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'arto_dx',this.checked)"></td>
-        <td style="text-align:center"><input type="checkbox" ${a.arto_sx ? 'checked' : ''}
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'arto_sx',this.checked)"></td>
-        <td><input class="c11-meas-n" type="number" step="0.1" min="0.1" value="${a.fattore_correttivo !== undefined && a.fattore_correttivo !== '' ? a.fattore_correttivo : 1.0}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'fattore_correttivo',this.value)" placeholder="1.0"></td>
-        <td><input class="c11-meas-n" type="number" step="1" min="0" value="${a.tempo_min !== '' && a.tempo_min !== undefined ? a.tempo_min : ''}"
-          onchange="App.onC11HavField('${fieldId}',${gi},${ai},'tempo_min',this.value)" placeholder="0"></td>
-        <td class="c11-calc">${tOre > 0 ? tOre.toFixed(2) : '—'}</td>
-        <td class="c11-calc">${a8i}</td>
-        <td><button class="c11-rm-inline" onclick="App.onC11RemoveHav('${fieldId}',${gi},${ai})">✕</button></td>
-      </tr>`;
-    }).join('');
-
-    const A8 = _c11HavA8(atts);
-    const A8fmt = A8 > 0 ? A8.toFixed(3) : '—';
-
-    const presRows = C11_PRESCRIZIONI_HAV.map(([key, label]) => `
-      <label class="c11-presc-row">
-        <input type="checkbox" class="c11-presc-cb" ${preHav[key] ? 'checked' : ''}
-          onchange="App.onC11PrescrizioneHav('${fieldId}',${gi},'${key}',this.checked)">
-        <span>${escHtml(label)}</span>
-      </label>`).join('');
-
-    return `<div class="c11-vib-block c11-hav-block">
-      <div class="c11-vib-hdr">Vibrazioni mano-braccio (HAV) — UNI EN ISO 5349-1</div>
+  function _c11BloccoHtml(fieldId, gi, g, kind) {
+    const hav = kind === 'hav';
+    const atts = (hav ? g.hav_att : g.wbv_att) || [];
+    const pre = (hav ? g.presc_hav : g.presc_wbv) || {};
+    const idp = `c11r-${fieldId}-${gi}-${kind}`;
+    const inp = (ai, key, cls, extra = '') => `<input class="${cls}" ${extra} value="${escHtml(String(atts[ai][key] ?? ''))}"
+      onchange="App.onC11Att('${fieldId}',${gi},'${kind}',${ai},'${key}',this.value)">`;
+    const rows = atts.map((a, ai) => `<tr>
+        <td>${inp(ai, 'tipo', 'c11-meas', 'type="text" placeholder="Attrezzatura"')}</td>
+        <td>${inp(ai, 'marca_modello', 'c11-meas', 'type="text"')}</td>
+        <td>${inp(ai, 'modalita', 'c11-meas', 'type="text"')}</td>
+        <td>${inp(ai, 'awx', 'c11-meas-n', 'type="number" step="0.01"')}</td>
+        <td>${inp(ai, 'awy', 'c11-meas-n', 'type="number" step="0.01"')}</td>
+        <td>${inp(ai, 'awz', 'c11-meas-n', 'type="number" step="0.01"')}</td>
+        <td class="c11-calc" id="${idp}-${ai}-v"></td>
+        ${hav ? `<td style="text-align:center"><input type="checkbox" ${a.arto_dx === 0 || a.arto_dx === false ? '' : 'checked'}
+            onchange="App.onC11Att('${fieldId}',${gi},'hav',${ai},'arto_dx',this.checked?1:0)"></td>
+          <td style="text-align:center"><input type="checkbox" ${a.arto_sx === 0 || a.arto_sx === false ? '' : 'checked'}
+            onchange="App.onC11Att('${fieldId}',${gi},'hav',${ai},'arto_sx',this.checked?1:0)"></td>
+          <td>${inp(ai, 'fattore', 'c11-meas-n', 'type="number" step="0.1" min="0"')}</td>` : ''}
+        <td>${inp(ai, 'tempo_min', 'c11-meas-n', 'type="number" step="1" min="0"')}</td>
+        <td class="c11-calc" id="${idp}-${ai}-o"></td>
+        <td class="c11-calc" id="${idp}-${ai}-a"></td>
+        <td><button class="c11-rm-inline" onclick="App.onC11RemoveAtt('${fieldId}',${gi},'${kind}',${ai})">✕</button></td>
+      </tr>`).join('');
+    const presRows = (hav ? C11_PRESC_HAV : C11_PRESC_WBV).map(([key, label]) => `
+      <label class="c11-presc-row"><input type="checkbox" class="c11-presc-cb" ${pre[key] ? 'checked' : ''}
+        onchange="App.onC11Presc('${fieldId}',${gi},'${kind}','${key}',this.checked)"><span>${escHtml(label)}</span></label>`).join('');
+    const extra = hav
+      ? `<div class="c11-field-row c11-mt8"><label class="c11-lbl">Altri DPI</label>
+          <input class="c11-inp" type="text" value="${escHtml(pre.altri_dpi || '')}" placeholder="Facoltativo: se compilato viene spuntato e riportato nel Word"
+            onchange="App.onC11Presc('${fieldId}',${gi},'hav','altri_dpi',this.value)"></div>`
+      : `<div class="c11-field-row c11-mt8"><label class="c11-lbl">Supporti elastici su</label>
+          <input class="c11-inp" type="text" value="${escHtml(pre.supporti_attrezzature || '')}" placeholder="Attrezzature con sedile ammortizzato (riportato nel Word)"
+            onchange="App.onC11Presc('${fieldId}',${gi},'wbv','supporti_attrezzature',this.value)"></div>`;
+    const ov = (hav ? g.rischio_hav : g.rischio_wbv) || '';
+    return `<div class="c11-vib-block c11-${kind}-block">
+      <div class="c11-vib-hdr">${hav ? 'Vibrazioni mano-braccio (HAV) — UNI EN ISO 5349-1' : 'Vibrazioni al corpo intero (WBV) — ISO 2631-1'}</div>
       <div class="c11-vib-body">
-        <div style="overflow-x:auto">
-          <table class="c11-meas-table">
-            <thead><tr>
-              <th>Attrezzatura</th><th>Marca/Modello</th><th>Modalità d'uso</th>
-              <th>a<sub>vi</sub> (m/s²)</th><th>Dx</th><th>Sx</th><th>G</th>
-              <th>t (min)</th><th>t (ore)</th><th>A(8)i (m/s²)</th><th></th>
-            </tr></thead>
-            <tbody>${attRows}</tbody>
-            <tfoot><tr class="c11-total-row">
-              <td colspan="9" class="c11-total-lbl">A(8) totale gruppo</td>
-              <td class="c11-total-val">${A8fmt}</td><td></td>
-            </tr></tfoot>
-          </table>
-        </div>
-        <button class="c11-add-sm-btn" onclick="App.onC11AddHav('${fieldId}',${gi})">+ Aggiungi attrezzatura HAV</button>
-        ${A8 > 0 ? `<div class="c11-result-row">Livello di rischio: ${_c11FasciaHtml(A8, 'hav')}
-          <span class="c11-soglie">Soglie: Basso &lt;2,5 — Medio 2,5÷5,0 — Elevato ≥5,0 m/s²</span></div>` : ''}
+        <div style="overflow-x:auto"><table class="c11-meas-table">
+          <thead><tr><th>Attrezzatura</th><th>Marca / modello</th><th>Modalità di utilizzo</th>
+            <th>aw<sub>x</sub> [m/s²]</th><th>aw<sub>y</sub> [m/s²]</th><th>aw<sub>z</sub> [m/s²]</th>
+            <th>${hav ? 'a<sub>vi</sub>' : 'aw<sub>maxi</sub>'} [m/s²]</th>
+            ${hav ? '<th>Arto dx</th><th>Arto sx</th><th>Fatt. corr.</th>' : ''}
+            <th>Tempo [min]</th><th>Tempo [ore]</th><th>A(8)<sub>i</sub> [m/s²]</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr class="c11-total-row"><td colspan="${hav ? 11 : 8}" class="c11-total-lbl">A(8) [m/s²]</td>
+            <td class="c11-total-val" id="${idp}-tot"></td><td></td></tr></tfoot>
+        </table></div>
+        <button class="c11-add-sm-btn" onclick="App.onC11AddAtt('${fieldId}',${gi},'${kind}')">+ Aggiungi attrezzatura ${hav ? 'HAV' : 'WBV'}</button>
+        <div class="c11-result-row" id="${idp}-esito"></div>
+        <div class="c11-field-row c11-mt8"><label class="c11-lbl">Livello di rischio</label>
+          <select class="c11-inp" style="max-width:260px" onchange="App.onC11GruppoField('${fieldId}',${gi},'rischio_${kind}',this.value)">
+            <option value="" ${!ov ? 'selected' : ''}>Automatico (dal calcolo)</option>
+            ${['basso', 'medio', 'alto'].map(x => `<option value="${x}" ${ov === x ? 'selected' : ''}>Forza: ${_C11_LBL[x]}</option>`).join('')}
+          </select></div>
         <div class="c11-presc-section">
-          <div class="c11-subsec-hdr">Misure di prevenzione per vibrazioni mano-braccio</div>
-          <div class="c11-prescrizioni">${presRows}</div>
-          <div class="c11-field-row c11-mt8">
-            <label class="c11-lbl">Altri DPI</label>
-            <input class="c11-inp" type="text" value="${escHtml(preHav.altri_dpi || '')}"
-              onchange="App.onC11PrescrizioneHav('${fieldId}',${gi},'altri_dpi',this.value)"
-              placeholder="Specificare altri dispositivi di protezione individuale">
-          </div>
+          <div class="c11-subsec-hdr">Misure di prevenzione e protezione — ${hav ? 'mano-braccio' : 'corpo intero'}</div>
+          <div class="c11-prescrizioni">${presRows}</div>${extra}
         </div>
       </div>
     </div>`;
   }
 
-  function _c11WbvHtml(fieldId, gi, g) {
-    const atts = (g.wbv && g.wbv.attrezzature) || [];
-    const preWbv = g.prescrizioni_wbv || {};
-
-    const attRows = atts.map((a, ai) => {
-      const tOre = (parseFloat(a.tempo_min) || 0) / 60;
-      const awmax = parseFloat(a.awmaxi) || 0;
-      const a8i = (tOre > 0 && awmax > 0) ? (awmax * Math.sqrt(tOre / 8)).toFixed(3) : '—';
-      return `<tr>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.tipo || '')}"
-          onchange="App.onC11WbvField('${fieldId}',${gi},${ai},'tipo',this.value)" placeholder="Attrezzatura"></td>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.marca_modello || '')}"
-          onchange="App.onC11WbvField('${fieldId}',${gi},${ai},'marca_modello',this.value)" placeholder="—"></td>
-        <td><input class="c11-meas" type="text" value="${escHtml(a.modalita || '')}"
-          onchange="App.onC11WbvField('${fieldId}',${gi},${ai},'modalita',this.value)" placeholder="—"></td>
-        <td><input class="c11-meas-n" type="number" step="0.001" value="${a.awmaxi !== '' && a.awmaxi !== undefined ? a.awmaxi : ''}"
-          onchange="App.onC11WbvField('${fieldId}',${gi},${ai},'awmaxi',this.value)" placeholder="—"></td>
-        <td><input class="c11-meas-n" type="number" step="1" min="0" value="${a.tempo_min !== '' && a.tempo_min !== undefined ? a.tempo_min : ''}"
-          onchange="App.onC11WbvField('${fieldId}',${gi},${ai},'tempo_min',this.value)" placeholder="0"></td>
-        <td class="c11-calc">${tOre > 0 ? tOre.toFixed(2) : '—'}</td>
-        <td class="c11-calc">${a8i}</td>
-        <td><button class="c11-rm-inline" onclick="App.onC11RemoveWbv('${fieldId}',${gi},${ai})">✕</button></td>
-      </tr>`;
-    }).join('');
-
-    const A8 = _c11WbvA8(atts);
-    const A8fmt = A8 > 0 ? A8.toFixed(3) : '—';
-
-    const presRows = C11_PRESCRIZIONI_WBV.map(([key, label]) => `
-      <label class="c11-presc-row">
-        <input type="checkbox" class="c11-presc-cb" ${preWbv[key] ? 'checked' : ''}
-          onchange="App.onC11PrescrizioneWbv('${fieldId}',${gi},'${key}',this.checked)">
-        <span>${escHtml(label)}</span>
-      </label>`).join('');
-
-    return `<div class="c11-vib-block c11-wbv-block">
-      <div class="c11-vib-hdr">Vibrazioni al corpo intero (WBV) — ISO 2631-1</div>
-      <div class="c11-vib-body">
-        <div style="overflow-x:auto">
-          <table class="c11-meas-table">
-            <thead><tr>
-              <th>Attrezzatura</th><th>Marca/Modello</th><th>Modalità d'uso</th>
-              <th>a<sub>wmax,i</sub> (m/s²)</th><th>t (min)</th><th>t (ore)</th>
-              <th>A(8)i (m/s²)</th><th></th>
-            </tr></thead>
-            <tbody>${attRows}</tbody>
-            <tfoot><tr class="c11-total-row">
-              <td colspan="6" class="c11-total-lbl">A(8) totale gruppo</td>
-              <td class="c11-total-val">${A8fmt}</td><td></td>
-            </tr></tfoot>
-          </table>
-        </div>
-        <button class="c11-add-sm-btn" onclick="App.onC11AddWbv('${fieldId}',${gi})">+ Aggiungi attrezzatura WBV</button>
-        ${A8 > 0 ? `<div class="c11-result-row">Livello di rischio: ${_c11FasciaHtml(A8, 'wbv')}
-          <span class="c11-soglie">Soglie: Basso &lt;0,5 — Medio 0,5÷1,0 — Elevato ≥1,0 m/s²</span></div>` : ''}
-        <div class="c11-presc-section">
-          <div class="c11-subsec-hdr">Misure di prevenzione per vibrazioni al corpo intero</div>
-          <div class="c11-prescrizioni">${presRows}</div>
-          <div class="c11-field-row c11-mt8">
-            <label class="c11-lbl">Altri DPI</label>
-            <input class="c11-inp" type="text" value="${escHtml(preWbv.altri_dpi || '')}"
-              onchange="App.onC11PrescrizioneWbv('${fieldId}',${gi},'altri_dpi',this.value)"
-              placeholder="Specificare altri dispositivi di protezione individuale">
-          </div>
-        </div>
-      </div>
-    </div>`;
+  // aggiorna SOLO i risultati (nessun ricostruire: non si perde il focus)
+  function _c11Risultati(fieldId, gi) {
+    const ed = state.formValues[fieldId]; const g = ed && ed.gruppi[gi]; if (!g) return;
+    ['hav', 'wbv'].forEach(kind => {
+      if (!g[kind]) return;
+      const atts = (kind === 'hav' ? g.hav_att : g.wbv_att) || [];
+      const r = kind === 'hav' ? _c11Hav(atts) : _c11Wbv(atts);
+      const idp = `c11r-${fieldId}-${gi}-${kind}`;
+      const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+      r.righe.forEach((x, ai) => {
+        set(`${idp}-${ai}-v`, _fm(kind === 'hav' ? x.avi : x.aw));
+        set(`${idp}-${ai}-o`, _fm(x.te));
+        set(`${idp}-${ai}-a`, _fm(x.a8i));
+      });
+      set(`${idp}-tot`, _fm(r.a8));
+      const es = document.getElementById(`${idp}-esito`);
+      if (es) es.innerHTML = atts.length ? _c11Badge(r, kind === 'hav' ? g.rischio_hav : g.rischio_wbv, kind) : '';
+    });
   }
 
+  function _c11Post(fieldId, gi) { _c11Risultati(fieldId, gi); saveChapterDraft(); }
+
+  function onC11Acc(fieldId, v) { const ed = state.formValues[fieldId]; if (!ed) return; ed.accelerometro = v; saveChapterDraft(); }
   function onC11GruppoField(fieldId, gi, key, value) {
+    const ed = state.formValues[fieldId]; if (!ed || !ed.gruppi[gi]) return;
+    ed.gruppi[gi][key] = value;
+    if (key === 'nome') _c11Rebuild(fieldId); else _c11Post(fieldId, gi);
+  }
+  function onC11Toggle(fieldId, gi, kind, checked) {
+    const ed = state.formValues[fieldId]; if (!ed || !ed.gruppi[gi]) return;
+    const g = ed.gruppi[gi]; g[kind] = checked;
+    const lst = kind === 'hav' ? 'hav_att' : 'wbv_att';
+    if (checked && !(g[lst] || []).length) g[lst] = [_c11AttVuota()];
+    _c11Rebuild(fieldId); _c11Risultati(fieldId, gi);
+  }
+  function onC11Att(fieldId, gi, kind, ai, key, value) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    g[key] = value;
+    const lst = (kind === 'hav' ? ed.gruppi[gi].hav_att : ed.gruppi[gi].wbv_att);
+    if (!lst[ai]) return;
+    lst[ai][key] = value;
+    _c11Post(fieldId, gi);
+  }
+  function onC11AddAtt(fieldId, gi, kind) {
+    const ed = state.formValues[fieldId]; if (!ed) return;
+    const g = ed.gruppi[gi]; const k = kind === 'hav' ? 'hav_att' : 'wbv_att';
+    (g[k] = g[k] || []).push(_c11AttVuota());
+    _c11Rebuild(fieldId); _c11Risultati(fieldId, gi);
+  }
+  function onC11RemoveAtt(fieldId, gi, kind, ai) {
+    const ed = state.formValues[fieldId]; if (!ed) return;
+    const g = ed.gruppi[gi]; (kind === 'hav' ? g.hav_att : g.wbv_att).splice(ai, 1);
+    _c11Rebuild(fieldId); _c11Risultati(fieldId, gi);
+  }
+  function onC11Presc(fieldId, gi, kind, key, value) {
+    const ed = state.formValues[fieldId]; if (!ed) return;
+    const g = ed.gruppi[gi]; const k = kind === 'hav' ? 'presc_hav' : 'presc_wbv';
+    (g[k] = g[k] || {})[key] = value;
     saveChapterDraft();
   }
-
-  function onC11HavToggle(fieldId, gi, checked) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!g.hav) g.hav = { presente: false, attrezzature: [] };
-    g.hav.presente = checked;
-    if (checked && (!g.hav.attrezzature || !g.hav.attrezzature.length))
-      g.hav.attrezzature = [_c11DefaultHavAtt()];
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11WbvToggle(fieldId, gi, checked) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!g.wbv) g.wbv = { presente: false, attrezzature: [] };
-    g.wbv.presente = checked;
-    if (checked && (!g.wbv.attrezzature || !g.wbv.attrezzature.length))
-      g.wbv.attrezzature = [_c11DefaultWbvAtt()];
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11HavField(fieldId, gi, ai, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.hav) return;
-    const a = g.hav.attrezzature[ai]; if (!a) return;
-    if (key === 'arto_dx' || key === 'arto_sx') a[key] = Boolean(value);
-    else if (key === 'avi' || key === 'fattore_correttivo' || key === 'tempo_min')
-      a[key] = value === '' ? '' : (parseFloat(value) || '');
-    else a[key] = value;
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11WbvField(fieldId, gi, ai, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.wbv) return;
-    const a = g.wbv.attrezzature[ai]; if (!a) return;
-    if (key === 'awmaxi' || key === 'tempo_min')
-      a[key] = value === '' ? '' : (parseFloat(value) || '');
-    else a[key] = value;
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11AddHav(fieldId, gi) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.hav) return;
-    g.hav.attrezzature.push(_c11DefaultHavAtt());
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11RemoveHav(fieldId, gi, ai) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.hav) return;
-    g.hav.attrezzature.splice(ai, 1);
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11AddWbv(fieldId, gi) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.wbv) return;
-    g.wbv.attrezzature.push(_c11DefaultWbvAtt());
-    _c11Rebuild(fieldId);
-  }
-
-  function onC11RemoveWbv(fieldId, gi, ai) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g || !g.wbv) return;
-    g.wbv.attrezzature.splice(ai, 1);
-    _c11Rebuild(fieldId);
-  }
-
   function onC11AddGruppo(fieldId) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    const id = ed.gruppi_omogenei.length + 1;
-    ed.gruppi_omogenei.push(_c11DefaultGruppo(id));
+    ed.gruppi.push(_c11DefaultGruppo(ed.gruppi.length + 1));
     _c11Rebuild(fieldId);
   }
-
   function onC11RemoveGruppo(fieldId, gi) {
     const ed = state.formValues[fieldId]; if (!ed) return;
-    if (ed.gruppi_omogenei.length <= 1) return;
-    ed.gruppi_omogenei.splice(gi, 1);
-    ed.gruppi_omogenei.forEach((g, i) => { g.id = i + 1; });
+    ed.gruppi.splice(gi, 1);
+    if (!ed.gruppi.length) ed.gruppi.push(_c11DefaultGruppo(1));
     _c11Rebuild(fieldId);
   }
-
-  function onC11PrescrizioneHav(fieldId, gi, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!g.prescrizioni_hav) g.prescrizioni_hav = {};
-    g.prescrizioni_hav[key] = value;
-    saveChapterDraft();
-  }
-
-  function onC11PrescrizioneWbv(fieldId, gi, key, value) {
-    const ed = state.formValues[fieldId]; if (!ed) return;
-    const g = ed.gruppi_omogenei[gi]; if (!g) return;
-    if (!g.prescrizioni_wbv) g.prescrizioni_wbv = {};
-    g.prescrizioni_wbv[key] = value;
-    saveChapterDraft();
-  }
-
   function onC11PrescrizioneGen(fieldId, key, checked) {
     const ed = state.formValues[fieldId]; if (!ed) return;
     if (!ed.prescrizioni_generali) ed.prescrizioni_generali = {};
     ed.prescrizioni_generali[key] = checked;
     saveChapterDraft();
+  }
+  // dopo il render iniziale: calcola i risultati di tutti i gruppi
+  function _c11InitRisultati(fieldId) {
+    const ed = state.formValues[fieldId]; if (!ed) return;
+    ed.gruppi.forEach((_, gi) => _c11Risultati(fieldId, gi));
   }
 
   /* ── Validate & Save ────────────────────────────────────────────────── */
@@ -10391,7 +10667,8 @@ const App = (() => {
 
   return {
     init, showHome, showClient, showConfig, toggleTheme,
-    pickJson, openTechDrive, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
+    pickJson, chiudiChangelog, openTechDrive, apriDrive, driveChiudi, driveApriBrowser, driveApriClienteBrowser, driveApriUrl, driveOrdine, driveRecenti, driveLettera, driveAggiorna, driveFiltro, driveScegli, driveIndietro, driveScarica, onDragOver, onDragLeave, onDrop, dismissImportSuccess,
+    apriRas, apriRasCliente, rasScegli, rasApriRecente, rasChiudi, rasCampo, rasGenera, rasApriCartella,
     onPickTipoDvr, toggleDvrType, onToggleCap2Semplificato, setClientSection, generaAllegati,
     apriCartellaAllegati, apriCartellaAllegatiCliente, apriAllegato, apriAllegatoN, onToggleAllegato,
     esportaAllegatiPdf, chiudiAlg32Fullscreen, onAlg32Toggle, onAlg32Pos,
@@ -10444,13 +10721,12 @@ const App = (() => {
     toggleC20Area,
     // Cap6 editor
     onC6VarToggle, onCap6Sel, onCap6Field,
+    onGruppoManuale, cap6AddS, cap6DelS, cap6DelMov, cap6Ripristina, cap7Ripristina, cap6bRipristina,
     openCap6Misure, saveCap6Misure, closeCap6Misure, onCap6MisMain, onCap6MisSub,
     // Cap10 editor
-    onC10Fonometro, onC10GruppoField, onC10AttSel,
+    onC10Fonometro, onC10GruppoField,
     onC10AddGruppo, onC10RemoveGruppo,
-    onC10AddPostazione, onC10RemovePostazione, onC10PostazioneField,
-    onC10Misura, onC10Sorgente, onC10AddSorgente, onC10RemoveSorgente,
-    onC10Lavoratore, onC10AddLavoratore, onC10RemoveLav,
+    onC10AddMisura, onC10RemoveMisura, onC10Misura, onC10Rischio,
     onC10Prescrizione,
     toggleC10Gruppo,
     // Cap14 editor
@@ -10468,11 +10744,8 @@ const App = (() => {
     onC21Settore, onC21GruppoNome, onC21MergeCheck,
     onC21AccorpaSubmit, onC21SciogliGruppo, onC21DataField,
     // Cap11 editor
-    onC11GruppoField, onC11HavToggle, onC11WbvToggle,
-    onC11HavField, onC11WbvField,
-    onC11AddHav, onC11RemoveHav, onC11AddWbv, onC11RemoveWbv,
-    onC11AddGruppo, onC11RemoveGruppo,
-    onC11PrescrizioneHav, onC11PrescrizioneWbv, onC11PrescrizioneGen,
+    onC11Acc, onC11GruppoField, onC11Toggle, onC11Att, onC11AddAtt, onC11RemoveAtt, onC11Presc,
+    onC11AddGruppo, onC11RemoveGruppo, onC11PrescrizioneGen,
     exportClientDocx, exportClientPdf, exportAllTogether, compileAllToFolder,
     showReleaseNotes,
     toast, showLoading, hideLoading,
